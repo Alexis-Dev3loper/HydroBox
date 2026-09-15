@@ -3,7 +3,9 @@ name: Mobile baseline
 on:
   push:
     branches: [feature-valencia, master]
+    paths-ignore: ["**/*.md"]
   pull_request:
+    paths-ignore: ["**/*.md"]
 
 permissions:
   contents: read

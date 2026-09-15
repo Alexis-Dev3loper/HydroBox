@@ -2,7 +2,7 @@
 
 Actualizado: **2026-09-15**.
 
-Estado: **IMPLEMENTADO LOCALMENTE / VERIFICACIÓN DE TOOLCHAIN PENDIENTE**.
+Estado: **IMPLEMENTADO / VERIFICADO / PUBLICADO**.
 
 ## Stack y build
 
@@ -18,9 +18,14 @@ Estado: **IMPLEMENTADO LOCALMENTE / VERIFICACIÓN DE TOOLCHAIN PENDIENTE**.
 | Tests previos | solo ejemplos del template; no caracterizaban HydroBox |
 
 El host auditado no tiene JDK, Android SDK ni caché Gradle, por lo que el build
-no puede ejecutarse todavía localmente. `scripts/verify-mobile-baseline.ps1`
-detecta ese prerequisito y, con toolchain disponible, ejecuta la misma matriz
-usada por CI: `testDebugUnitTest`, `lintDebug` y `assembleDebug`.
+no puede ejecutarse localmente. `scripts/verify-mobile-baseline.ps1` detecta ese
+prerequisito y, con toolchain disponible, ejecuta la misma matriz usada por CI:
+`testDebugUnitTest`, `lintDebug` y `assembleDebug`.
+
+GitHub Actions `35002475731` validó el baseline con JDK 17, Android SDK 36 y
+Build Tools 36.0.0: **10/10 unit tests**, `lintDebug`, `assembleDebug` y
+`BUILD SUCCESSFUL`. El único warning de código es el reconnect MQTT mediante
+`GlobalScope`, deuda legacy ya asignada a MB-004.
 
 ## Matriz de configuración
 
