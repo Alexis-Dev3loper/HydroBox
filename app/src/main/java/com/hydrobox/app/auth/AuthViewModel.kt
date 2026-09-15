@@ -6,14 +6,28 @@ import com.hydrobox.app.auth.data.*
 import kotlinx.coroutines.flow.*
 import kotlinx.coroutines.*
 import android.net.Uri
+import android.os.Build
 import androidx.core.net.toUri
 import android.util.Log
+import com.hydrobox.app.auth.session.AndroidKeystoreSessionVault
+import com.hydrobox.app.auth.session.HttpHumanAuthApi
+import com.hydrobox.app.auth.session.SessionManager
+import com.hydrobox.app.config.HydroBoxEnvironment
 import java.io.File
 import java.io.FileOutputStream
 
 class AuthViewModel(app: Application) : AndroidViewModel(app) {
     private val db = AppDatabase.get(app)
-    private val repo = AuthRepository(db.authDao(), AuthStore(app))
+    private val sessions = SessionManager(
+        api = HttpHumanAuthApi(HydroBoxEnvironment.current.api.baseUrl),
+        vault = AndroidKeystoreSessionVault(app)
+    )
+    private val repo = AuthRepository(
+        dao = db.authDao(),
+        store = AuthStore(app),
+        sessions = sessions,
+        deviceName = "HydroBox Android ${Build.MODEL}".take(100)
+    )
 
     val authState = repo.authState
         .stateIn(viewModelScope, SharingStarted.Eagerly, initialValue = AuthState())
@@ -31,14 +45,23 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
 
     init {
         viewModelScope.launch {
-            repo.onAppLaunch()
-            _booting.value = false
+            try {
+                repo.restoreSession()
+            } finally {
+                _booting.value = false
+            }
         }
     }
 
     fun login(email: String, pass: String, remember: Boolean, onResult: (Boolean) -> Unit) {
         viewModelScope.launch {
-            val ok = withContext(Dispatchers.IO) { repo.login(email, pass, remember) }
+            val ok = try {
+                withContext(Dispatchers.IO) { repo.login(email, pass, remember) }
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                false
+            }
             onResult(ok)
         }
     }
@@ -70,7 +93,6 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         name: String,
         lastName: String,
         email: String,
-        newPasswordPlain: String?,
         avatarUri: String?,
         phonePrefix: String?,
         phone: String?,
@@ -85,7 +107,6 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
                 name = name,
                 lastName = lastName,
                 email = email,
-                newPasswordPlain = newPasswordPlain,
                 avatarUri = persisted ?: avatarUri,
                 phonePrefix = phonePrefix,
                 phone = phone

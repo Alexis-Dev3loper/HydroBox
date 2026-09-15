@@ -12,6 +12,9 @@ interface AuthDao {
     @Query("SELECT * FROM users_local WHERE email = :email COLLATE NOCASE LIMIT 1")
     suspend fun findByEmail(email: String): UserEntity?
 
+    @Query("SELECT * FROM users_local WHERE principalUuid = :principalUuid LIMIT 1")
+    suspend fun findByPrincipalUuid(principalUuid: String): UserEntity?
+
     @Query("SELECT * FROM users_local WHERE id = :id LIMIT 1")
     fun observeById(id: Long): Flow<UserEntity?>
 
@@ -24,7 +27,6 @@ interface AuthDao {
     @androidx.room.Update
     suspend fun update(user: UserEntity)
 
-    // ✅ nueva función para login con backend
     @Insert(onConflict = OnConflictStrategy.REPLACE)
     suspend fun upsert(user: UserEntity): Long
 }

@@ -15,8 +15,6 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.outlined.AccountCircle
 import androidx.compose.material.icons.outlined.CameraAlt
-import androidx.compose.material.icons.outlined.Visibility
-import androidx.compose.material.icons.outlined.VisibilityOff
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -25,8 +23,6 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Color
 import androidx.compose.foundation.text.KeyboardOptions
 import androidx.compose.ui.text.input.KeyboardType
-import androidx.compose.ui.text.input.PasswordVisualTransformation
-import androidx.compose.ui.text.input.VisualTransformation
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import kotlinx.coroutines.launch
@@ -52,21 +48,17 @@ fun AccountScreen(
     var email by remember(user) { mutableStateOf(user.email) }
     var phonePrefix by remember(user) { mutableStateOf(user.phonePrefix ?: "+52") }
     var phone by remember(user) { mutableStateOf(user.phone ?: "") }
-    var password by remember { mutableStateOf("") }
-    var showPassword by remember { mutableStateOf(false) }
 
     val emailOk = remember(email) { email.isNotBlank() && android.util.Patterns.EMAIL_ADDRESS.matcher(email).matches() }
-    val passOk = remember(password) { password.isEmpty() || password.length >= 8 }
     val phoneOk = remember(phone) { phone.isEmpty() || phone.all(Char::isDigit) }
 
-    val hasChanges = remember(nameFull, email, phonePrefix, phone, password, photoUri) {
+    val hasChanges = remember(nameFull, email, phonePrefix, phone, photoUri) {
         val baseFull = "${user.name} ${user.lastName}".trim()
         nameFull.isNotBlank() && (
                 nameFull != baseFull ||
                         email != user.email ||
                         phonePrefix != (user.phonePrefix ?: "+52") ||
                         phone != (user.phone ?: "") ||
-                        password.isNotEmpty() ||
                         (photoUri?.toString() ?: "") != (user.avatarUri ?: "")
                 )
     }
@@ -167,29 +159,6 @@ fun AccountScreen(
                 )
             }
 
-            LabeledField("Contraseña (opcional)") {
-                TextField(
-                    value = password,
-                    onValueChange = { password = it },
-                    placeholder = { Text("********") },
-                    singleLine = true,
-                    visualTransformation = if (showPassword) VisualTransformation.None else PasswordVisualTransformation(),
-                    trailingIcon = {
-                        IconButton(onClick = { showPassword = !showPassword }) {
-                            Icon(
-                                if (showPassword) Icons.Outlined.VisibilityOff else Icons.Outlined.Visibility,
-                                contentDescription = if (showPassword) "Ocultar" else "Mostrar"
-                            )
-                        }
-                    },
-                    isError = !passOk,
-                    supportingText = { if (!passOk) Text("Mínimo 8 caracteres", color = MaterialTheme.colorScheme.error) },
-                    shape = RoundedCornerShape(14.dp),
-                    modifier = Modifier.fillMaxWidth(),
-                    colors = tfColors
-                )
-            }
-
             LabeledField("Teléfono") {
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     TextField(
@@ -226,7 +195,6 @@ fun AccountScreen(
                         name = n,
                         lastName = l,
                         email = email,
-                        newPasswordPlain = password.ifBlank { null },
                         avatarUri = photoUri?.toString(),
                         phonePrefix = phonePrefix,
                         phone = phone
@@ -236,12 +204,17 @@ fun AccountScreen(
                         }
                     }
                 },
-                enabled = hasChanges && emailOk && passOk && phoneOk,
+                enabled = hasChanges && emailOk && phoneOk,
                 shape = RoundedCornerShape(14.dp),
                 modifier = Modifier.fillMaxWidth().height(48.dp)
             ) { Text("Guardar cambios") }
 
-            Text("Rol: Administrador", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
+            val roleLabel = when (user.roleKey) {
+                "administrator" -> "Administrador"
+                "operator" -> "Operador"
+                else -> "Sin asignar"
+            }
+            Text("Rol: $roleLabel", style = MaterialTheme.typography.labelMedium, color = MaterialTheme.colorScheme.onSurfaceVariant)
             Spacer(Modifier.height(8.dp))
         }
     }

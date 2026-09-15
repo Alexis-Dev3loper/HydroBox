@@ -1,16 +1,25 @@
 package com.hydrobox.app.auth
 
-import com.hydrobox.app.api.ApiUser
-import com.hydrobox.app.api.HydroApi
-import com.hydrobox.app.auth.data.*
+import com.hydrobox.app.auth.data.AuthDao
+import com.hydrobox.app.auth.data.AuthState
+import com.hydrobox.app.auth.data.AuthStore
+import com.hydrobox.app.auth.data.UserEntity
+import com.hydrobox.app.auth.session.HumanPrincipal
+import com.hydrobox.app.auth.session.SessionManager
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.ExperimentalCoroutinesApi
-import kotlinx.coroutines.flow.*
+import kotlinx.coroutines.flow.Flow
+import kotlinx.coroutines.flow.distinctUntilChanged
+import kotlinx.coroutines.flow.flatMapLatest
+import kotlinx.coroutines.flow.flowOf
 
 class AuthRepository(
     private val dao: AuthDao,
-    private val store: AuthStore
+    private val store: AuthStore,
+    private val sessions: SessionManager,
+    private val deviceName: String
 ) {
-    val authState: Flow<AuthState> = store.state.distinctUntilChanged()
+    val authState: Flow<AuthState> = sessions.state.distinctUntilChanged()
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val currentUser: Flow<UserEntity?> =
@@ -22,62 +31,29 @@ class AuthRepository(
 
     suspend fun login(email: String, pass: String, remember: Boolean): Boolean {
         val e = email.trim()
-        val p = pass.trim()
-        if (e.isBlank() || p.isBlank()) return false
+        if (e.isBlank() || pass.isBlank()) return false
 
-        // 1) Login contra la API de Laravel (Hostinger)
-        val remote: ApiUser? = try {
-            HydroApi.login(e, p)
-        } catch (_: Exception) {
-            null
+        val loggedIn = sessions.login(e, pass, deviceName, remember, ::persistPrincipal)
+        if (loggedIn) {
+            try {
+                store.rememberLogin(e, remember)
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (_: Exception) {
+                // Remember-me metadata is optional and must not invalidate a secure session.
+            }
         }
-
-        if (remote == null) {
-            store.clear()
-            return false
-        }
-
-        // 2) Sincronizar usuario remoto en Room
-        val existing = dao.findByEmail(remote.email)
-
-        val entity = if (existing != null) {
-            existing.copy(
-                name          = remote.name,
-                lastName      = remote.lastName ?: existing.lastName,
-                email         = remote.email,
-                passwordPlain = p,   // solo local
-                avatarUri     = remote.avatarUrl ?: existing.avatarUri,
-                phonePrefix   = remote.phonePrefix ?: existing.phonePrefix,
-                phone         = remote.phone ?: existing.phone
-            )
-        } else {
-            UserEntity(
-                id            = 0,
-                name          = remote.name,
-                lastName      = remote.lastName ?: "",
-                email         = remote.email,
-                passwordPlain = p,
-                avatarUri     = remote.avatarUrl,
-                phonePrefix   = remote.phonePrefix,
-                phone         = remote.phone
-            )
-        }
-
-        // 3) Guardar/actualizar en Room y marcar sesión iniciada
-        val localId = dao.upsert(entity)
-        store.setLoggedIn(localId, remote.email, remember)
-        return true
+        return loggedIn
     }
 
-    suspend fun logout() { store.clear() }
-    suspend fun onAppLaunch() { store.onAppLaunch() }
+    suspend fun logout() = sessions.logout()
+    suspend fun restoreSession(): Boolean = sessions.restore(::persistPrincipal)
 
     suspend fun updateProfile(
         userId: Long,
         name: String,
         lastName: String,
         email: String,
-        newPasswordPlain: String?,
         avatarUri: String?,
         phonePrefix: String?,
         phone: String?
@@ -87,11 +63,31 @@ class AuthRepository(
             name = name,
             lastName = lastName,
             email = email,
-            passwordPlain = newPasswordPlain?.takeIf { it.isNotEmpty() } ?: current.passwordPlain,
             avatarUri = avatarUri,
             phonePrefix = phonePrefix,
             phone = phone
         )
         dao.update(updated)
+    }
+
+    private suspend fun persistPrincipal(principal: HumanPrincipal): Long {
+        val existing = dao.findByPrincipalUuid(principal.principalUuid)
+            ?: dao.findByEmail(principal.email)
+        val names = principal.name.trim().split(Regex("\\s+"), limit = 2)
+        val entity = existing?.copy(
+            name = names.firstOrNull().orEmpty().ifBlank { principal.email.substringBefore('@') },
+            lastName = names.getOrNull(1).orEmpty(),
+            email = principal.email,
+            principalUuid = principal.principalUuid,
+            roleKey = principal.roleKey
+        ) ?: UserEntity(
+            name = names.firstOrNull().orEmpty().ifBlank { principal.email.substringBefore('@') },
+            lastName = names.getOrNull(1).orEmpty(),
+            email = principal.email,
+            principalUuid = principal.principalUuid,
+            roleKey = principal.roleKey
+        )
+
+        return dao.upsert(entity)
     }
 }

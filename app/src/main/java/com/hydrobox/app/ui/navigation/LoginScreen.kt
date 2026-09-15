@@ -42,7 +42,8 @@ fun LoginScreen(
     val rememberedPref  by vm.rememberPref.collectAsState()
 
     var email by rememberSaveable(rememberedEmail) { mutableStateOf(rememberedEmail.orEmpty()) }
-    var pass by rememberSaveable { mutableStateOf("") }
+    // Passwords must not enter Compose saved-state bundles.
+    var pass by remember { mutableStateOf("") }
     var rememberMe by rememberSaveable(rememberedPref) { mutableStateOf(rememberedPref) }
 
     var loading by remember { mutableStateOf(false) }
@@ -57,9 +58,10 @@ fun LoginScreen(
                 loading = true; error = null
                 setGlobalBusy(true)
                 vm.login(email, pass, rememberMe) { ok ->
+                    pass = ""
                     loading = false
                     if (ok) onLoggedIn() else {
-                        error = "Credenciales inválidas"
+                        error = "No fue posible iniciar sesión. Revisa tus datos y conexión."
                         setGlobalBusy(false)
                     }
                 }
