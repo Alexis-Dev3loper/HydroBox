@@ -1,0 +1,123 @@
+# MB-001 — Baseline reproducible Mobile
+
+Actualizado: **2026-09-15**.
+
+Estado: **IMPLEMENTADO LOCALMENTE / VERIFICACIÓN DE TOOLCHAIN PENDIENTE**.
+
+## Stack y build
+
+| Componente | Estado real |
+|---|---|
+| Android | applicationId/namespace `com.hydrobox.app`; min 24, compile/target 36 |
+| Lenguaje | Kotlin 2.0.21; Java/JVM 17 |
+| Build | AGP 8.13.0, Gradle Wrapper 8.13, KSP 2.0.21-1.0.25 |
+| UI | Jetpack Compose, Material 3, Navigation y Coil |
+| Datos locales | Room 2.6.1 y DataStore 1.1.1 |
+| Concurrencia | Kotlin coroutines 1.9.0 |
+| Red legacy | `HttpURLConnection` y HiveMQ MQTT 3.1.10 |
+| Tests previos | solo ejemplos del template; no caracterizaban HydroBox |
+
+El host auditado no tiene JDK, Android SDK ni caché Gradle, por lo que el build
+no puede ejecutarse todavía localmente. `scripts/verify-mobile-baseline.ps1`
+detecta ese prerequisito y, con toolchain disponible, ejecuta la misma matriz
+usada por CI: `testDebugUnitTest`, `lintDebug` y `assembleDebug`.
+
+## Matriz de configuración
+
+Precedencia: propiedad Gradle → `local.properties` ignorado por Git → variable
+de entorno → placeholder inerte.
+
+| Propiedad Gradle | Variable de entorno | Default versionado | Uso |
+|---|---|---|---|
+| `hydrobox.apiBaseUrl` | `HYDROBOX_MOBILE_API_BASE_URL` | URL HTTPS `.invalid` | API legacy/transicional; MB-003 migra a `/api/v1` |
+| `hydrobox.mqttEnabled` | `HYDROBOX_MOBILE_MQTT_ENABLED` | `false` | habilita temporalmente MQTT directo solo en debug |
+| `hydrobox.mqttHost` | `HYDROBOX_MOBILE_MQTT_HOST` | host `.invalid` | broker DEV aislado |
+| `hydrobox.mqttPort` | `HYDROBOX_MOBILE_MQTT_PORT` | `1883` | puerto legacy caracterizado |
+| `hydrobox.mqttUsername` | `HYDROBOX_MOBILE_MQTT_USERNAME` | vacío | DEV legacy; no versionar |
+| `hydrobox.mqttPassword` | `HYDROBOX_MOBILE_MQTT_PASSWORD` | vacío | DEV legacy; no versionar |
+
+La API exige URL absoluta HTTPS. Release fuerza MQTT a deshabilitado y elimina
+username/password aunque existan valores locales. Esta configuración no es un
+secret store: MB-004 elimina MQTT directo y MB-002 implementa la sesión humana
+sin passwords persistidos.
+
+## Inventario de contratos actuales
+
+### API — LEGACY / TRANSITIONAL
+
+- base URL ahora configurable; anteriormente estaba fija;
+- login `POST login`, sin token/sesión visible;
+- `GET hortaliza/actual`, `POST hortaliza/cambiar` por ID numérico;
+- `GET registro-mediciones` con columnas fijas legacy;
+- `GET sensores` con aliases de campos;
+- `HttpURLConnection`, timeouts 10 s/15 s y parsing `org.json`;
+- fallos de varias mutaciones se reducen a boolean/null, sin Problem Details.
+
+MB-003 debe reemplazar esta frontera por los DTO/envelopes `/api/v1`, auth y
+keys canónicas ya versionadas en Web. No retirar rutas Web legacy antes de que
+Mobile migre y exista evidencia de cero consumidores.
+
+### MQTT — LEGACY / TRANSITIONAL
+
+- topic `hydrobox/actuators/{deviceId}/set`;
+- switch `{"on": boolean}` y dosis `{"dose_ml": integer}`;
+- MQTT 3, QoS 1, retain false, clean session y reconnect simple;
+- la UI cambia estado tras publish; no existen command UUID, expiry, dedupe,
+  ACK accepted/completed ni reported state;
+- transporte sin TLS visible en este cliente.
+
+`LegacyMqttContractTest` congela este shape solo para impedir cambios
+accidentales durante la migración. No lo convierte en contrato objetivo.
+
+### Persistencia local — RIESGO ABIERTO
+
+- Room `hydro_local.db`, schema 3, tabla `users_local`;
+- `fallbackToDestructiveMigration()` puede perder cache local;
+- la entidad guarda `passwordPlain`; MB-002 debe eliminarlo mediante migration
+  explícita y borrar la copia existente sin conservar el valor;
+- se detectó una posible credencial versionada histórica en `MainActivity.kt`;
+  la copia activa fue sanitizada, pero requiere rotación y revisión del historial;
+- DataStore `auth_prefs` guarda logged-in, user ID, remember-me y último email;
+- `onAppLaunch()` cierra siempre la sesión aunque remember-me esté activo;
+- backup/data extraction no excluyen explícitamente la DB y preferencias.
+
+No copiar el password, tokens o credenciales históricas a fixtures, logs o docs.
+
+## Discrepancias de dominio caracterizadas
+
+- Cultivos usan IDs remotos 1–6; 3/4 cruzan Rúcula/Acelga frente al orden Core.
+- Existen dos catálogos locales con duraciones diferentes; Core deja la duración
+  por defecto nullable deliberadamente.
+- `ce_value` se usa históricamente como ORP; no representa CE canónica.
+- Nivel de agua se presenta como porcentaje/rangos 80–100 %, mientras Core usa
+  centímetros; no existe conversión aceptada sin calibración física.
+- `fecha` se conserva como string sin timezone; no debe declararse UTC sin
+  conversión diseñada.
+- Alias físicos de actuadores se derivan desde títulos UI y no son keys lógicas
+  canónicas.
+
+MB-003/MB-005 migran estas discrepancias; MB-001 no inventa mappings.
+
+## Navegación y smoke
+
+Pantallas detectadas: login, resumen, historial, sensores, actuadores, cultivos,
+cuenta, notificaciones y ajustes. El smoke host verificable es:
+
+1. compilar sources y recursos con `assembleDebug`;
+2. ejecutar unit tests de configuración y contrato legacy;
+3. ejecutar `lintDebug`;
+4. confirmar que defaults no abren API/broker real y MQTT queda deshabilitado;
+5. confirmar que el APK release no habilita MQTT directo ni incorpora sus
+   credenciales de debug.
+
+Un smoke UI instrumentado necesita emulador/dispositivo y se mantiene separado;
+no requiere ni autoriza broker, API, hardware o credenciales reales.
+
+## Deuda priorizada
+
+1. **MB-002 P0:** eliminar `passwordPlain`, seed local y backup sensible; diseñar
+   lifecycle de access/refresh token y logout seguro.
+2. **MB-003 P0:** cliente `/api/v1`, auth, DTOs/versionado y keys canónicas.
+3. **MB-004 P0:** retirar MQTT directo y representar lifecycle real de commands.
+4. **MB-005 P1:** cultivos, telemetría, unidades y timestamps canónicos.
+5. **MB-006+**: cache/offline, UX integrada, cámara y hardening final.

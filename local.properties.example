@@ -1,0 +1,12 @@
+# Copy to local.properties and keep that file outside Git.
+# Values below are inert placeholders; never commit real credentials.
+sdk.dir=C\:\\path\\to\\Android\\Sdk
+hydrobox.apiBaseUrl=https://api.example.invalid/api/v1
+
+# LEGACY / DEV ONLY. Direct MQTT will be removed in MB-004 and is forced off
+# for release builds. Leave disabled unless using an isolated test broker.
+hydrobox.mqttEnabled=false
+hydrobox.mqttHost=mqtt.example.invalid
+hydrobox.mqttPort=1883
+hydrobox.mqttUsername=
+hydrobox.mqttPassword=

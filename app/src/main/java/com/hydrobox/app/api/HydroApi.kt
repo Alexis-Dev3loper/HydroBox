@@ -1,5 +1,6 @@
 package com.hydrobox.app.api
 
+import com.hydrobox.app.config.HydroBoxEnvironment
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
@@ -38,14 +39,15 @@ class HttpException(val code: Int, body: String?) : Exception("HTTP $code: $body
 
 object HydroApi {
 
-    private const val BASE_URL = "https://hydrobox.pi.jademajesty.com/api"
+    private val baseUrl: String
+        get() = HydroBoxEnvironment.current.api.baseUrl
 
     private suspend fun request(
         method: String,
         path: String,
         body: JSONObject? = null
     ): String = withContext(Dispatchers.IO) {
-        val url = URL("$BASE_URL/${path.trimStart('/')}")
+        val url = URL("$baseUrl/${path.trimStart('/')}")
         val conn = (url.openConnection() as HttpURLConnection).apply {
             requestMethod = method
             connectTimeout = 10_000
@@ -99,7 +101,7 @@ object HydroApi {
 
     suspend fun login(email: String, password: String): ApiUser? =
         withContext(Dispatchers.IO) {
-            val url = URL("$BASE_URL/login")
+            val url = URL("$baseUrl/login")
             val conn = (url.openConnection() as HttpURLConnection).apply {
                 requestMethod = "POST"
                 connectTimeout = 10_000

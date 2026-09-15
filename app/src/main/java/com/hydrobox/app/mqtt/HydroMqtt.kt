@@ -8,7 +8,7 @@ import kotlinx.coroutines.*
 import java.nio.charset.StandardCharsets
 
 object HydroMqtt {
-    var host: String = "192.168.3.201"
+    var host: String = ""
     var port: Int = 1883
     var user: String? = null
     var pass: String? = null
@@ -20,6 +20,10 @@ object HydroMqtt {
     private const val TAG = "HydroMqtt"
 
     fun connect() {
+        if (host.isBlank()) {
+            Log.w(TAG, "connect skipped: legacy MQTT host is not configured")
+            return
+        }
         val cli = MqttClient.builder()
             .useMqttVersion3()
             .identifier("hydrobox-android-" + System.currentTimeMillis())
@@ -62,13 +66,11 @@ object HydroMqtt {
     }
 
     fun sendSwitch(deviceId: String, on: Boolean) {
-        val payload = """{"on":${if (on) "true" else "false"}}"""
-        publish("hydrobox/actuators/$deviceId/set", payload)
+        publish(LegacyMqttContract.actuatorTopic(deviceId), LegacyMqttContract.switchPayload(on))
     }
 
     fun sendDose(deviceId: String, ml: Int) {
-        val payload = """{"dose_ml":$ml}"""
-        publish("hydrobox/actuators/$deviceId/set", payload)
+        publish(LegacyMqttContract.actuatorTopic(deviceId), LegacyMqttContract.dosingPayload(ml))
     }
 
     private fun publish(topic: String, payload: String) {
