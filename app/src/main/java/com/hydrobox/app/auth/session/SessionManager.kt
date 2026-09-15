@@ -89,7 +89,7 @@ class SessionManager(
         } catch (_: Exception) {
             null
         }
-        stored?.let(::revokeBestEffort)
+        if (stored != null) revokeBestEffort(stored)
         clearAndLogOut()
     }
 

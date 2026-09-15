@@ -19,7 +19,7 @@ class AuthRepository(
     private val sessions: SessionManager,
     private val deviceName: String
 ) {
-    val authState: Flow<AuthState> = sessions.state.distinctUntilChanged()
+    val authState: Flow<AuthState> = sessions.state
 
     @OptIn(ExperimentalCoroutinesApi::class)
     val currentUser: Flow<UserEntity?> =
