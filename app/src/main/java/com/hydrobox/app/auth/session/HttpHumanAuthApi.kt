@@ -11,7 +11,12 @@ import java.net.URL
 import java.time.Instant
 import java.util.UUID
 
-class HttpHumanAuthApi(private val baseUrl: String) : HumanAuthApi {
+class HttpHumanAuthApi(
+    private val baseUrl: String,
+    private val connectionFactory: (URL) -> HttpURLConnection = { url ->
+        url.openConnection() as HttpURLConnection
+    }
+) : HumanAuthApi {
     override suspend fun issueToken(
         email: String,
         password: String,
@@ -68,8 +73,9 @@ class HttpHumanAuthApi(private val baseUrl: String) : HumanAuthApi {
         body: JSONObject? = null,
         bearer: String? = null
     ): String = withContext(Dispatchers.IO) {
-        val connection = URL("${baseUrl.trimEnd('/')}/${path.trimStart('/')}")
-            .openConnection() as HttpURLConnection
+        val connection = connectionFactory(
+            URL("${baseUrl.trimEnd('/')}/${path.trimStart('/')}")
+        )
         try {
             connection.requestMethod = method
             connection.connectTimeout = CONNECT_TIMEOUT_MILLIS
