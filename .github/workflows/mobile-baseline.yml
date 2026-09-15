@@ -24,5 +24,7 @@ jobs:
       - uses: gradle/actions/setup-gradle@v4
       - name: Install pinned Android SDK components
         run: sdkmanager "platforms;android-36" "build-tools;36.0.0"
+      - name: Enable Gradle Wrapper
+        run: chmod +x gradlew
       - name: Verify baseline
         run: ./gradlew --no-daemon testDebugUnitTest lintDebug assembleDebug
