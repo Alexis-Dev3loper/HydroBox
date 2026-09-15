@@ -28,6 +28,12 @@ documentan en `docs/MOBILE_BASELINE.md`.
 El MQTT directo solo puede habilitarse en debug y no debe apuntar a hardware ni
 infraestructura real durante pruebas. Release lo fuerza a deshabilitado.
 
+La URL API debe incluir la base versionada `/api/v1`. El login ya usa token
+opaco, refresh rotatorio, logout y `/me`; no persiste la contraseña. El resto de
+las pantallas conserva endpoints legacy hasta MB-003, por lo que un entorno real
+no debe considerarse listo todavía. El lifecycle y rollout están en
+`docs/MOBILE_AUTH.md`.
+
 ## Verificación
 
 ```powershell
@@ -49,4 +55,4 @@ esta verificación.
 
 Leer `AGENTS.md` antes de modificar. La documentación canónica cross-repo vive
 en `../Desktop/docs/project/`; el inventario específico de Mobile está en
-`docs/MOBILE_BASELINE.md`.
+`docs/MOBILE_BASELINE.md` y la sesión segura en `docs/MOBILE_AUTH.md`.

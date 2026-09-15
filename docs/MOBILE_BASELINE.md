@@ -48,19 +48,20 @@ sin passwords persistidos.
 
 ## Inventario de contratos actuales
 
-### API — LEGACY / TRANSITIONAL
+### API — TRANSITIONAL
 
 - base URL ahora configurable; anteriormente estaba fija;
-- login `POST login`, sin token/sesión visible;
+- auth humana usa `/api/v1/auth/token`, `/api/v1/auth/refresh`,
+  `/api/v1/auth/logout` y `/api/v1/me` desde MB-002;
 - `GET hortaliza/actual`, `POST hortaliza/cambiar` por ID numérico;
 - `GET registro-mediciones` con columnas fijas legacy;
 - `GET sensores` con aliases de campos;
 - `HttpURLConnection`, timeouts 10 s/15 s y parsing `org.json`;
 - fallos de varias mutaciones se reducen a boolean/null, sin Problem Details.
 
-MB-003 debe reemplazar esta frontera por los DTO/envelopes `/api/v1`, auth y
-keys canónicas ya versionadas en Web. No retirar rutas Web legacy antes de que
-Mobile migre y exista evidencia de cero consumidores.
+MB-003 debe reemplazar las operaciones de dominio restantes por los
+DTO/envelopes `/api/v1` y keys canónicas ya versionadas en Web. No retirar rutas
+Web legacy antes de que Mobile migre y exista evidencia de cero consumidores.
 
 ### MQTT — LEGACY / TRANSITIONAL
 
@@ -74,19 +75,22 @@ Mobile migre y exista evidencia de cero consumidores.
 `LegacyMqttContractTest` congela este shape solo para impedir cambios
 accidentales durante la migración. No lo convierte en contrato objetivo.
 
-### Persistencia local — RIESGO ABIERTO
+### Persistencia local — MB-002 IMPLEMENTADO LOCALMENTE / CI PENDIENTE
 
-- Room `hydro_local.db`, schema 3, tabla `users_local`;
-- `fallbackToDestructiveMigration()` puede perder cache local;
-- la entidad guarda `passwordPlain`; MB-002 debe eliminarlo mediante migration
-  explícita y borrar la copia existente sin conservar el valor;
+- Room `hydro_local.db`, schema 4, tabla `users_local` sin password;
+- migration explícita 3→4 preserva el perfil no sensible y descarta
+  irreversiblemente `passwordPlain`;
+- se retiraron el seed local y `fallbackToDestructiveMigration()`;
+- access/refresh tokens se cifran AES-GCM mediante Android Keystore; SharedPrefs
+  solo contiene IV y ciphertext;
+- DataStore conserva únicamente `remember_me` y el último email opcional;
+- DB, DataStore y preferencias cifradas están excluidos de cloud backup y
+  device transfer;
 - se detectó una posible credencial versionada histórica en `MainActivity.kt`;
   la copia activa fue sanitizada, pero requiere rotación y revisión del historial;
-- DataStore `auth_prefs` guarda logged-in, user ID, remember-me y último email;
-- `onAppLaunch()` cierra siempre la sesión aunque remember-me esté activo;
-- backup/data extraction no excluyen explícitamente la DB y preferencias.
 
-No copiar el password, tokens o credenciales históricas a fixtures, logs o docs.
+El detalle de lifecycle, amenazas y rollout está en `MOBILE_AUTH.md`. No copiar
+passwords, tokens o credenciales históricas a fixtures, logs o docs.
 
 ## Discrepancias de dominio caracterizadas
 
@@ -120,8 +124,8 @@ no requiere ni autoriza broker, API, hardware o credenciales reales.
 
 ## Deuda priorizada
 
-1. **MB-002 P0:** eliminar `passwordPlain`, seed local y backup sensible; diseñar
-   lifecycle de access/refresh token y logout seguro.
+1. **MB-002 P0:** implementación local en `86b7762`; falta ejecutar CI Android,
+   corregir cualquier fallo, publicar y cerrar evidencia/documentación.
 2. **MB-003 P0:** cliente `/api/v1`, auth, DTOs/versionado y keys canónicas.
 3. **MB-004 P0:** retirar MQTT directo y representar lifecycle real de commands.
 4. **MB-005 P1:** cultivos, telemetría, unidades y timestamps canónicos.
