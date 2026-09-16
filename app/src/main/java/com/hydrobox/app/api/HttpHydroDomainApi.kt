@@ -344,6 +344,7 @@ class HttpHydroDomainApi(
         private const val API_VERSION = "1"
         private const val CONNECT_TIMEOUT_MILLIS = 10_000
         private const val READ_TIMEOUT_MILLIS = 15_000
-        private val LOGICAL_KEY = Regex("^[a-z][a-z0-9_]{1,49}$")
+        // Keep this aligned with API v1's LogicalKey schema in openapi.json.
+        private val LOGICAL_KEY = Regex("^[a-z0-9][a-z0-9_-]{0,63}$")
     }
 }
