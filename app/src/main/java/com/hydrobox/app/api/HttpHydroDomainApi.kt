@@ -129,7 +129,7 @@ class HttpHydroDomainApi(
         val data = envelope.requireDataArray()
         val meta = envelope.requireMeta()
         return ApiPage(
-            items = data.objects().map(JSONObject::toMeasurement),
+            items = data.objects().map { it.toMeasurement() },
             hasMore = meta.requireBoolean("has_more"),
             nextCursor = meta.nullableString("next_cursor")
         ).also { page ->
@@ -145,7 +145,7 @@ class HttpHydroDomainApi(
 
     private suspend fun activeCycle(context: DomainApiContext): ApiCycle? {
         val envelope = request(context, "GET", "cycles?active=true&limit=2")
-        val cycles = envelope.requireDataArray().objects().map(JSONObject::toCycle)
+        val cycles = envelope.requireDataArray().objects().map { it.toCycle() }
         if (cycles.size > 1) throw invalidResponse()
         return cycles.singleOrNull()
     }
