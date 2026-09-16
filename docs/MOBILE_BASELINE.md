@@ -120,9 +120,9 @@ no requiere ni autoriza broker, API, hardware o credenciales reales.
 
 ## Deuda priorizada
 
-1. **MB-005 P1:** publicar y verificar en CI la implementación local.
-2. **MB-006 P1:** cache/offline y manejo de errores/reconexión.
-3. **MB-007+**: UX integrada, cámara y hardening final.
+1. **MB-006 P1:** cache/offline y manejo de errores/reconexión.
+2. **MB-007+**: UX integrada, cámara y hardening final.
+3. **CI:** migrar las Actions que aún apuntan a `setup-java@v4`/Node 20.
 
 MB-002 quedó publicado hasta `54f28c3` y la matriz Android completa pasó en CI
 `35036523635` con los 29 tests del source tree, lint y assemble.
@@ -130,5 +130,6 @@ MB-003 está publicado hasta `0b7f10c`; `testDebugUnitTest` (**40/40**),
 `lintDebug` y `assembleDebug` pasan en CI `35060435836`.
 MB-004 está publicado en `2f8907f`–`92c9862`; CI `35081160677` valida
 `testDebugUnitTest`, `lintDebug` y `assembleDebug`. Mobile #5 está cerrada.
-MB-005 está implementado localmente en `64d5566`–`950139f`: 46 tests en
-source, unidades/duraciones API, cero/missing, freshness y hora local; falta CI.
+MB-005 está publicado en `64d5566`–`1a1c594`: 46 tests en source,
+unidades/duraciones API, cero/missing, freshness y hora local. CI `35131675188`
+valida `testDebugUnitTest`, `lintDebug` y `assembleDebug`; Mobile #6 está cerrada.

@@ -2,7 +2,7 @@
 
 Actualizado: **2026-09-16**.
 
-Estado: **IMPLEMENTADO LOCALMENTE / VERIFICACIÓN CI Y PUBLICACIÓN PENDIENTES**.
+Estado: **IMPLEMENTADO / VERIFICADO / PUBLICADO**.
 
 ## Estado heredado
 
@@ -65,15 +65,19 @@ La auditoría MB-005 encontró deuda únicamente en presentación:
 - calibración o conversión física Edge;
 - cambios API, DB, MQTT, hardware, deployment o credenciales reales.
 
-## Evidencia local
+## Evidencia
 
 - `64d5566`: auditoría y diseño de semántica de presentación.
 - `cbf1b94`: modelo puro de unidad/precisión/freshness/tiempo/series y tests;
   contract test adicional rechaza keys de catálogo desconocidas.
 - `950139f`: Inicio, Historial y Cultivos consumen unidades/rangos/duración API,
   presentan hora local y eliminan fallbacks físicos/temporales inventados.
+- `1a1c594`: checkpoint de continuidad previo a la verificación remota.
 - El source tree suma **46 tests**. El escaneo no encuentra
   `fallbackCycleDays`, `%` aplicado a `water_level`, rangos óptimos locales ni
   índices ficticios para el eje temporal.
-- `git diff --check` pasa. El host continúa sin JDK/SDK; tests, lint y assemble
-  quedan pendientes de la CI posterior al push.
+- `git diff --check` pasa. GitHub Actions `35131675188`, job `104913937930`,
+  ejecutó `testDebugUnitTest`, `lintDebug` y `assembleDebug` sobre el HEAD
+  `1a1c594`: **BUILD SUCCESSFUL** en 4m56s, 58 tareas ejecutadas.
+- Mobile #6 está cerrada. Los avisos de deprecación de `setup-java@v4` y del
+  runtime Node de Actions son deuda de CI independiente, no un fallo MB-005.
