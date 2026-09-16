@@ -1,8 +1,8 @@
 # MB-003 — Cliente de dominio API v1
 
-Actualizado: **2026-09-15**.
+Actualizado: **2026-09-16**.
 
-Estado: **IMPLEMENTADO LOCALMENTE / VERIFICACIÓN CI Y PUBLICACIÓN PENDIENTES**.
+Estado: **IMPLEMENTADO / VERIFICADO / PUBLICADO**.
 
 ## Alcance real auditado
 
@@ -80,18 +80,22 @@ legacy. No se ejecuta deployment desde esta fase.
 - ausencia de endpoints/IDs legacy en el source activo;
 - `testDebugUnitTest`, `lintDebug` y `assembleDebug` en CI reproducible.
 
-## Evidencia local
+## Evidencia
 
 - `b59726b`: auditoría y diseño del cliente API v1;
 - `49c85d3`: port/adapter autenticado, contexto de sitio, DTOs estrictos y tests
   de contrato HTTP en memoria;
 - `a831887`: migración de Resumen, Sensores, Historial y Cultivos; elimina
   `HydroApi.kt`, IDs/rutas legacy y telemetría demo;
+- `4c939ae` y `c260b7f`: corrigen invocación de parsers y alinean `LogicalKey`
+  exactamente con OpenAPI v1;
+- `0b7f10c`: permite verificar `PATCH` con el fake JVM sin cambiar producción;
 - 40 métodos `@Test` existen en el source tree; los 11 nuevos cubren cliente,
   invalidación de sesión y resolución de `crop_key`;
 - escaneo estático sin `id_hortaliza`, `remote_id`, `registro-mediciones`,
   `hortaliza/actual`, `hortaliza/cambiar` ni imports del singleton legacy.
 
 El host actual no dispone de Java/JDK (`JAVA_HOME` y `java` ausentes), por lo
-que Gradle no puede ejecutarse localmente. El cierre exige push autorizado y CI
-verde para tests, lint y assemble; hasta entonces Mobile #4 permanece abierta.
+que Gradle no puede ejecutarse localmente. GitHub Actions `35060435836` validó
+`testDebugUnitTest` (**40/40**), `lintDebug` y `assembleDebug`; Mobile #4 está
+cerrada. No hubo deployment ni se configuraron credenciales reales.

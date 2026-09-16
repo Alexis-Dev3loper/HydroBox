@@ -15,15 +15,15 @@ Este repositorio es la aplicación Android de HydroBox. En el workspace completo
 - Jetpack Compose/Material 3, Navigation, Room, DataStore, coroutines, Coil y HiveMQ MQTT.
 - Auth humana usa `/api/v1/auth/*` y `/api/v1/me`; MB-003 implementa además
   catálogos, ciclos y telemetría `/api/v1/sites/{site_key}/*` con Bearer,
-  Problem Details, UUID/UTC y keys canónicas. Su CI/publicación sigue pendiente.
+  Problem Details, UUID/UTC y keys canónicas. Está publicado y verificado en CI.
 - MQTT legacy usa puerto 1883/QoS 1 y sin TLS visible; está deshabilitado por
   defecto y forzado off en release hasta retirarlo en MB-004.
 - Room v4 elimina irreversiblemente `passwordPlain`; access/refresh tokens solo
   se guardan cifrados con una clave Android Keystore y quedan fuera de backups.
 - MB-001 validó CI reproducible con JDK 17/SDK 36. MB-002 quedó publicado y
-  verificado en CI `35036523635`: el source tree suma 29 pruebas, y también
-  pasan `lintDebug` y `assembleDebug`. MB-003 eleva el source tree local a 40
-  pruebas; el host actual no tiene JDK/SDK y requiere CI para validarlas.
+  verificado en CI `35036523635`. MB-003 está publicado hasta `0b7f10c`; sus
+  40 pruebas, `lintDebug` y `assembleDebug` pasan en CI `35060435836`. El host
+  actual no tiene JDK/SDK, por lo que la matriz completa se valida en CI.
 
 ## Reglas específicas
 

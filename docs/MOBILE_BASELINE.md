@@ -1,6 +1,6 @@
 # MB-001 — Baseline reproducible Mobile
 
-Actualizado: **2026-09-15**.
+Actualizado: **2026-09-16**.
 
 Estado: **IMPLEMENTADO / VERIFICADO / PUBLICADO**.
 
@@ -48,7 +48,7 @@ sin passwords persistidos.
 
 ## Inventario de contratos actuales
 
-### API — MB-003 IMPLEMENTADO LOCALMENTE / VERIFICACIÓN PENDIENTE
+### API — MB-003 IMPLEMENTADO / VERIFICADO / PUBLICADO
 
 - base URL configurable y HTTPS; anteriormente estaba fija;
 - auth humana usa `/api/v1/auth/token`, `/api/v1/auth/refresh`,
@@ -64,9 +64,9 @@ sin passwords persistidos.
 - exactamente un sitio está soportado; cero o múltiples sitios fallan cerrado
   hasta implementar selección explícita.
 
-Los commits locales MB-003 `b59726b`, `49c85d3` y `a831887` requieren todavía
-push autorizado y matriz CI. Las rutas Web legacy no se retiran hasta publicar
-Mobile, obtener CI verde y comprobar cero consumidores.
+MB-003 está publicado hasta `0b7f10c`. La matriz CI `35060435836` valida sus
+40 pruebas, `lintDebug` y `assembleDebug`; Mobile #4 está cerrada. Las rutas Web
+legacy no se retiran hasta comprobar cero consumidores operacionales.
 
 ### MQTT — LEGACY / TRANSITIONAL
 
@@ -99,9 +99,9 @@ passwords, tokens o credenciales históricas a fixtures, logs o docs.
 
 ## Discrepancias de dominio caracterizadas
 
-- **RESUELTO LOCALMENTE EN MB-003:** cultivos y sensores usan keys canónicas;
+- **RESUELTO EN MB-003:** cultivos y sensores usan keys canónicas;
   desaparece el cruce 3/4 Rúcula/Acelga y las duraciones/rangos provienen del API.
-- **RESUELTO LOCALMENTE EN MB-003:** telemetría usa readings canónicas y UTC;
+- **RESUELTO EN MB-003:** telemetría usa readings canónicas y UTC;
   ya no interpreta `ce_value` como ORP ni `fecha` sin timezone.
 - Nivel de agua conserva la unidad entregada por el catálogo. Cualquier
   transformación física futura continúa gated por calibración Edge.
@@ -127,13 +127,11 @@ no requiere ni autoriza broker, API, hardware o credenciales reales.
 
 ## Deuda priorizada
 
-1. **MB-003 P0:** implementación local cerrada; faltan CI/publicación y cierre
-   de Mobile #4.
-2. **MB-004 P0:** retirar MQTT directo y representar lifecycle real de commands.
-3. **MB-005 P1:** cerrar UX/unidades/freshness de dominio sobre el API canónico.
-4. **MB-006+**: cache/offline, UX integrada, cámara y hardening final.
+1. **MB-004 P0:** retirar MQTT directo y representar lifecycle real de commands.
+2. **MB-005 P1:** cerrar UX/unidades/freshness de dominio sobre el API canónico.
+3. **MB-006+**: cache/offline, UX integrada, cámara y hardening final.
 
 MB-002 quedó publicado hasta `54f28c3` y la matriz Android completa pasó en CI
 `35036523635` con los 29 tests del source tree, lint y assemble.
-MB-003 suma 40 pruebas en el source tree local; no se declara verificado hasta
-que `testDebugUnitTest`, `lintDebug` y `assembleDebug` pasen tras el push.
+MB-003 está publicado hasta `0b7f10c`; `testDebugUnitTest` (**40/40**),
+`lintDebug` y `assembleDebug` pasan en CI `35060435836`.
