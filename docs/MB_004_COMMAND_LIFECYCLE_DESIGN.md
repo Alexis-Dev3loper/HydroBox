@@ -2,7 +2,7 @@
 
 Actualizado: **2026-09-16**.
 
-Estado: **DISEÑO FUNCIONAL ACEPTADO POR ROADMAP / IMPLEMENTACIÓN EN PROCESO**.
+Estado: **IMPLEMENTADO LOCALMENTE / VERIFICACIÓN CI Y PUBLICACIÓN PENDIENTES**.
 
 ## Problema auditado
 
@@ -60,3 +60,13 @@ La API v1 publicada ya expone las fronteras necesarias:
 - Tests puros del modelo de presentación para desired/reported/lifecycle.
 - Escaneo sin `HydroMqtt`, HiveMQ, aliases físicos ni variables MQTT Mobile.
 - CI: `testDebugUnitTest`, `lintDebug` y `assembleDebug` con JDK 17/SDK 36.
+
+## Evidencia local
+
+- `2f8907f`: diseño funcional y límites de responsabilidad.
+- `a74fe1e`: DTOs, cliente HTTP, lifecycle, idempotencia y contract tests.
+- `9072966`: UI de actuadores/dosing por API y retiro de MQTT/HiveMQ/config.
+- El source tree conserva **40 tests** y el escaneo estático no encuentra
+  referencias activas a `HydroMqtt`, HiveMQ, variables MQTT ni aliases físicos.
+- `git diff --check` pasa. El host no dispone de JDK/SDK; la compilación, lint y
+  ejecución real de los tests quedan pendientes de CI después del push.

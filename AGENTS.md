@@ -12,12 +12,14 @@ Este repositorio es la aplicación Android de HydroBox. En el workspace completo
 ## Stack real auditado
 
 - Android nativo, Kotlin 2.0.21, AGP 8.13, Java 17, compile/target SDK 36, min SDK 24.
-- Jetpack Compose/Material 3, Navigation, Room, DataStore, coroutines, Coil y HiveMQ MQTT.
+- Jetpack Compose/Material 3, Navigation, Room, DataStore, coroutines y Coil.
 - Auth humana usa `/api/v1/auth/*` y `/api/v1/me`; MB-003 implementa además
   catálogos, ciclos y telemetría `/api/v1/sites/{site_key}/*` con Bearer,
   Problem Details, UUID/UTC y keys canónicas. Está publicado y verificado en CI.
-- MQTT legacy usa puerto 1883/QoS 1 y sin TLS visible; está deshabilitado por
-  defecto y forzado off en release hasta retirarlo en MB-004.
+- MB-004 está implementado localmente en `2f8907f`–`9072966`: commands y
+  dosing pasan por API v1, la UI separa intención/lifecycle/estado reportado y
+  se retiraron cliente, configuración y dependencia MQTT directos. Falta
+  publicar esos commits y confirmar la matriz Android en CI.
 - Room v4 elimina irreversiblemente `passwordPlain`; access/refresh tokens solo
   se guardan cifrados con una clave Android Keystore y quedan fuera de backups.
 - MB-001 validó CI reproducible con JDK 17/SDK 36. MB-002 quedó publicado y
@@ -31,6 +33,7 @@ Este repositorio es la aplicación Android de HydroBox. En el workspace completo
 - DataStore no es autoridad de sesión ni almacén de tokens; solo conserva la
   preferencia `remember_me` y el último email cuando el usuario lo solicita.
 - No ampliar el acoplamiento a endpoints, hosts, topics o IDs físicos hardcodeados.
+- Mobile no publica MQTT directamente; los intents físicos se registran por API v1.
 - No persistir nuevos secretos ni copiar contraseñas/tokens a logs, documentación o fixtures.
 - No considerar publish MQTT como ACK físico. Respetar lifecycle futuro de comandos.
 - Cambios de API requieren contrato versionado y coordinación con Web/Backend.

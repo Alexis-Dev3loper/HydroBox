@@ -14,7 +14,7 @@ Estado: **IMPLEMENTADO / VERIFICADO / PUBLICADO**.
 | UI | Jetpack Compose, Material 3, Navigation y Coil |
 | Datos locales | Room 2.6.1 y DataStore 1.1.1 |
 | Concurrencia | Kotlin coroutines 1.9.0 |
-| Red legacy | `HttpURLConnection` y HiveMQ MQTT 3.1.10 |
+| Red | `HttpURLConnection` sobre API v1; MQTT directo retirado localmente en MB-004 |
 | Tests previos | solo ejemplos del template; no caracterizaban HydroBox |
 
 El host auditado no tiene JDK, Android SDK ni caché Gradle, por lo que el build
@@ -24,8 +24,8 @@ prerequisito y, con toolchain disponible, ejecuta la misma matriz usada por CI:
 
 GitHub Actions `35002475731` validó el baseline con JDK 17, Android SDK 36 y
 Build Tools 36.0.0: **10/10 unit tests**, `lintDebug`, `assembleDebug` y
-`BUILD SUCCESSFUL`. El único warning de código es el reconnect MQTT mediante
-`GlobalScope`, deuda legacy ya asignada a MB-004.
+`BUILD SUCCESSFUL`. MB-004 retira localmente el cliente MQTT y su reconnect;
+esa unidad aún requiere la misma matriz CI antes de considerarse verificada.
 
 ## Matriz de configuración
 
@@ -35,16 +35,10 @@ de entorno → placeholder inerte.
 | Propiedad Gradle | Variable de entorno | Default versionado | Uso |
 |---|---|---|---|
 | `hydrobox.apiBaseUrl` | `HYDROBOX_MOBILE_API_BASE_URL` | URL HTTPS `.invalid` | base versionada `/api/v1` para auth y dominio canónico |
-| `hydrobox.mqttEnabled` | `HYDROBOX_MOBILE_MQTT_ENABLED` | `false` | habilita temporalmente MQTT directo solo en debug |
-| `hydrobox.mqttHost` | `HYDROBOX_MOBILE_MQTT_HOST` | host `.invalid` | broker DEV aislado |
-| `hydrobox.mqttPort` | `HYDROBOX_MOBILE_MQTT_PORT` | `1883` | puerto legacy caracterizado |
-| `hydrobox.mqttUsername` | `HYDROBOX_MOBILE_MQTT_USERNAME` | vacío | DEV legacy; no versionar |
-| `hydrobox.mqttPassword` | `HYDROBOX_MOBILE_MQTT_PASSWORD` | vacío | DEV legacy; no versionar |
 
-La API exige URL absoluta HTTPS. Release fuerza MQTT a deshabilitado y elimina
-username/password aunque existan valores locales. Esta configuración no es un
-secret store: MB-004 elimina MQTT directo y MB-002 implementa la sesión humana
-sin passwords persistidos.
+La API exige URL absoluta HTTPS. MB-004 elimina las propiedades MQTT y sus
+credenciales del build; `local.properties` no es un secret store. MB-002
+implementa la sesión humana sin passwords persistidos.
 
 ## Inventario de contratos actuales
 
@@ -68,17 +62,18 @@ MB-003 está publicado hasta `0b7f10c`. La matriz CI `35060435836` valida sus
 40 pruebas, `lintDebug` y `assembleDebug`; Mobile #4 está cerrada. Las rutas Web
 legacy no se retiran hasta comprobar cero consumidores operacionales.
 
-### MQTT — LEGACY / TRANSITIONAL
+### Commands/dosing API — MB-004 IMPLEMENTADO LOCALMENTE
 
-- topic `hydrobox/actuators/{deviceId}/set`;
-- switch `{"on": boolean}` y dosis `{"dose_ml": integer}`;
-- MQTT 3, QoS 1, retain false, clean session y reconnect simple;
-- la UI cambia estado tras publish; no existen command UUID, expiry, dedupe,
-  ACK accepted/completed ni reported state;
-- transporte sin TLS visible en este cliente.
+- catálogos, commands y dosing requests usan API v1 autenticada por sitio;
+- cada mutación reutilizable usa UUID e `Idempotency-Key`, expiry corta y un
+  único retry con el mismo body ante fallo transitorio;
+- la UI distingue desired, reported, availability y lifecycle; HTTP `202` no
+  se presenta como ACK ni ejecución física;
+- dosing registra mililitros y deja calibración/correlación física a Edge;
+- `HydroMqtt`, contrato/configuración MQTT y HiveMQ fueron retirados.
 
-`LegacyMqttContractTest` congela este shape solo para impedir cambios
-accidentales durante la migración. No lo convierte en contrato objetivo.
+Commits locales: `2f8907f`–`9072966`. Falta publicar y validar CI antes de
+marcar MB-004 como verificado.
 
 ### Persistencia local — MB-002 IMPLEMENTADO / VERIFICADO / PUBLICADO
 
@@ -105,8 +100,8 @@ passwords, tokens o credenciales históricas a fixtures, logs o docs.
   ya no interpreta `ce_value` como ORP ni `fecha` sin timezone.
 - Nivel de agua conserva la unidad entregada por el catálogo. Cualquier
   transformación física futura continúa gated por calibración Edge.
-- Alias físicos de actuadores se derivan desde títulos UI y no son keys lógicas
-  canónicas.
+- **RESUELTO LOCALMENTE EN MB-004:** actuadores y nutrientes usan keys lógicas
+  de catálogos API; la UI ya no deriva aliases físicos desde títulos.
 
 MB-003/MB-005 migran estas discrepancias; MB-001 no inventa mappings.
 
@@ -116,18 +111,17 @@ Pantallas detectadas: login, resumen, historial, sensores, actuadores, cultivos,
 cuenta, notificaciones y ajustes. El smoke host verificable es:
 
 1. compilar sources y recursos con `assembleDebug`;
-2. ejecutar unit tests de configuración y contrato legacy;
+2. ejecutar unit/contract tests de API, lifecycle y presentación;
 3. ejecutar `lintDebug`;
-4. confirmar que defaults no abren API/broker real y MQTT queda deshabilitado;
-5. confirmar que el APK release no habilita MQTT directo ni incorpora sus
-   credenciales de debug.
+4. confirmar que defaults no abren una API real;
+5. confirmar que el APK no contiene cliente, configuración ni credenciales MQTT.
 
 Un smoke UI instrumentado necesita emulador/dispositivo y se mantiene separado;
 no requiere ni autoriza broker, API, hardware o credenciales reales.
 
 ## Deuda priorizada
 
-1. **MB-004 P0:** retirar MQTT directo y representar lifecycle real de commands.
+1. **MB-004 P0:** publicar y verificar en CI la implementación local.
 2. **MB-005 P1:** cerrar UX/unidades/freshness de dominio sobre el API canónico.
 3. **MB-006+**: cache/offline, UX integrada, cámara y hardening final.
 
@@ -135,3 +129,5 @@ MB-002 quedó publicado hasta `54f28c3` y la matriz Android completa pasó en CI
 `35036523635` con los 29 tests del source tree, lint y assemble.
 MB-003 está publicado hasta `0b7f10c`; `testDebugUnitTest` (**40/40**),
 `lintDebug` y `assembleDebug` pasan en CI `35060435836`.
+MB-004 está implementado localmente en `2f8907f`–`9072966`; mantiene 40 tests
+en source y no conserva referencias activas a MQTT, pero aún no tiene CI.
