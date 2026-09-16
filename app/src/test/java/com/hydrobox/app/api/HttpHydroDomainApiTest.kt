@@ -280,6 +280,26 @@ class HttpHydroDomainApiTest {
     }
 
     @Test
+    fun rejectsUnknownSensorAndCropCatalogKeys() = runBlocking {
+        val responses = ArrayDeque(
+            listOf(
+                StubResponse(
+                    200,
+                    envelope("""[{"sensor_key":"legacy_ce","name":"CE","unit_symbol":"mS","description":null,"display_order":1,"is_active":true}]""")
+                ),
+                StubResponse(
+                    200,
+                    envelope("""[{"crop_key":"legacy_crop","name":"Legacy","description":null,"default_cycle_days":30,"is_active":true}]""")
+                )
+            )
+        )
+        val api = api(responses, mutableListOf())
+
+        assertEquals("api.invalid_response", expectDomainError { api.sensors() }.problem.code)
+        assertEquals("api.invalid_response", expectDomainError { api.crops() }.problem.code)
+    }
+
+    @Test
     fun parsesProblemDetailsAndInvalidatesOnlyUnauthorizedSessions() = runBlocking {
         var unauthorizedCalls = 0
         val responses = ArrayDeque(
