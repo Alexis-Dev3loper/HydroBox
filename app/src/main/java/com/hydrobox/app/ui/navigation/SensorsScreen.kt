@@ -19,6 +19,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.hydrobox.app.api.ApiSensor
 import com.hydrobox.app.api.HydroDomainApi
+import com.hydrobox.app.ui.components.DomainDataStatusBanner
 
 @Composable
 fun SensorsScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
@@ -49,6 +50,7 @@ fun SensorsScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
             "Sensores Registrados",
             style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold)
         )
+        DomainDataStatusBanner(api)
 
         when {
             loading -> {

@@ -16,6 +16,7 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.hydrobox.app.api.*
 import com.hydrobox.app.ui.model.*
+import com.hydrobox.app.ui.components.DomainDataStatusBanner
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 
@@ -87,6 +88,7 @@ fun ActuatorsScreen(
                         }
                     }
                 }
+                item { DomainDataStatusBanner(api) }
                 loadError?.let { code ->
                     item { StatusMessage("No se pudo actualizar: $code", MaterialTheme.colorScheme.error) }
                 }

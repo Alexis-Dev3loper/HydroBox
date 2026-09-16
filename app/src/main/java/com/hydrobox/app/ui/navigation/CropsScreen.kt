@@ -28,6 +28,7 @@ import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Speed
 import com.hydrobox.app.api.ApiSensorRange
 import com.hydrobox.app.api.HydroDomainApi
+import com.hydrobox.app.ui.components.DomainDataStatusBanner
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
@@ -131,6 +132,7 @@ fun CropsScreen(
             style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.onBackground
         )
+        DomainDataStatusBanner(api)
 
         if (loading) {
             Text(

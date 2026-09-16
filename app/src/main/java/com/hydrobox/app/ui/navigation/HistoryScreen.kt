@@ -7,6 +7,7 @@ import com.hydrobox.app.api.ApiMeasurement
 import com.hydrobox.app.api.ApiSensor
 import com.hydrobox.app.api.ApiSensorRange
 import com.hydrobox.app.api.HydroDomainApi
+import com.hydrobox.app.ui.components.DomainDataStatusBanner
 import java.time.Duration
 import java.time.Instant
 import java.util.Locale
@@ -118,6 +119,7 @@ fun HistoryScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
             style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold),
             color = MaterialTheme.colorScheme.onBackground
         )
+        DomainDataStatusBanner(api)
         Text(
             "Tendencias y eventos del cultivo",
             style = MaterialTheme.typography.bodyLarge,

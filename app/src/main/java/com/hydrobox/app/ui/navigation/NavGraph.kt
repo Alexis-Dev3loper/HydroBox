@@ -180,7 +180,7 @@ private fun MainScaffold(
                     ActuatorsScreen(
                         paddingValues = PaddingValues(),
                         api = authVM.domainApi,
-                        scopes = auth.scopes
+                        scopes = if (auth.offlineMode) emptySet() else auth.scopes
                     )
                 }
                 composable(Route.History.path)   {
@@ -190,7 +190,7 @@ private fun MainScaffold(
                     CropsScreen(
                         paddingValues = PaddingValues(),
                         api = authVM.domainApi,
-                        canChangeCrop = "cycle:write" in auth.scopes
+                        canChangeCrop = !auth.offlineMode && "cycle:write" in auth.scopes
                     )
                 }
                 composable(Route.Account.path)   { AccountScreen(vm = authVM) }

@@ -31,6 +31,7 @@ import coil.compose.AsyncImage
 import com.hydrobox.app.api.ApiMeasurement
 import com.hydrobox.app.api.ApiSensor
 import com.hydrobox.app.api.HydroDomainApi
+import com.hydrobox.app.ui.components.DomainDataStatusBanner
 import com.hydrobox.app.ui.model.Crop
 import com.hydrobox.app.ui.model.formatSensorReading
 import com.hydrobox.app.ui.model.readingSubtitle
@@ -149,6 +150,7 @@ fun ResumeScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
+        DomainDataStatusBanner(api)
         val crop = currentCrop
         if (cropLoading) {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
