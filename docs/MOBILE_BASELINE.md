@@ -120,7 +120,7 @@ no requiere ni autoriza broker, API, hardware o credenciales reales.
 
 ## Deuda priorizada
 
-1. **MB-006 P1:** cache/offline y manejo de errores/reconexión.
+1. **MB-006 P1:** publicar y verificar la implementación local de cache/offline.
 2. **MB-007+**: UX integrada, cámara y hardening final.
 3. **CI:** migrar las Actions que aún apuntan a `setup-java@v4`/Node 20.
 
@@ -133,3 +133,6 @@ MB-004 está publicado en `2f8907f`–`92c9862`; CI `35081160677` valida
 MB-005 está publicado en `64d5566`–`1a1c594`: 46 tests en source,
 unidades/duraciones API, cero/missing, freshness y hora local. CI `35131675188`
 valida `testDebugUnitTest`, `lintDebug` y `assembleDebug`; Mobile #6 está cerrada.
+MB-006 está implementado localmente en `b6e5be7`–`0348994`: 55 tests en source,
+cache network-first persistente y scoped, sesión offline read-only, backoff,
+invalidación y estado visible; falta publicación/CI y Mobile #7 sigue abierta.

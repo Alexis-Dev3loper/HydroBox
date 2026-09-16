@@ -2,7 +2,7 @@
 
 Actualizado: **2026-09-16**.
 
-Estado: **DISEÑO ACEPTADO INTERNAMENTE / IMPLEMENTACIÓN PENDIENTE**.
+Estado: **IMPLEMENTADO LOCALMENTE / VERIFICACIÓN CI Y PUBLICACIÓN PENDIENTES**.
 
 ## Auditoría del estado heredado
 
@@ -75,3 +75,18 @@ Estado: **DISEÑO ACEPTADO INTERNAMENTE / IMPLEMENTACIÓN PENDIENTE**.
 - background sync periódico/WorkManager y notificaciones push;
 - selección multi-sitio;
 - DB/MQTT directos, cambios de contrato API, deployment o hardware real.
+
+## Evidencia local
+
+- `b6e5be7`: auditoría y diseño de autoridad, políticas y casos negativos.
+- `d25dd30`: cache JSON atómico en `noBackupFilesDir`, scope usuario/sitio,
+  network-first, retry/backoff cancelable, freshness/max-age, invalidación,
+  restore offline cifrado y purga en logout/`401`.
+- `0348994`: banners live/cache/stale/no-disponible en las cinco pantallas de
+  dominio y bloqueo de permisos de escritura mientras la sesión está offline/no
+  verificada.
+- El source suma **55 tests**, incluidos restart, corrupción, límite/pruning,
+  aislamiento, fresh/stale/expired, cancelación, `401`, invalidación y ausencia
+  de fallback para intents físicos.
+- `git diff --check` pasa. El host no contiene JDK/Android SDK; quedan pendientes
+  `testDebugUnitTest`, `lintDebug` y `assembleDebug` en CI posterior al push.
