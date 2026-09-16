@@ -37,6 +37,35 @@ class HttpHydroDomainApi(
             )
         }
 
+    override suspend fun actuators(): List<ApiActuator> = list("catalogs/actuators") { value ->
+        val state = value.getJSONObject("state")
+        ApiActuator(
+            actuatorKey = value.requireAllowedKey("actuator_key", HydroApiContract.actuatorKeys),
+            name = value.requireString("name"),
+            actuatorType = value.requireString("actuator_type"),
+            safeState = value.requireBinaryState("safe_state"),
+            active = value.requireBoolean("is_active"),
+            state = ApiActuatorState(
+                desiredState = state.requireBinaryState("desired_state"),
+                reportedState = state.nullableBinaryState("reported_state"),
+                availabilityKey = state.requireAllowedKey("availability_key", HydroApiContract.availabilityKeys),
+                desiredChangedAt = state.nullableInstant("desired_changed_at"),
+                reportedAt = state.nullableInstant("reported_at"),
+                lastSeenAt = state.nullableInstant("last_seen_at")
+            )
+        )
+    }
+
+    override suspend fun nutrients(): List<ApiNutrient> = list("catalogs/nutrients") { value ->
+        ApiNutrient(
+            nutrientKey = value.requireAllowedKey("nutrient_key", HydroApiContract.nutrientKeys),
+            name = value.requireString("name"),
+            dosingActuatorKey = value.requireAllowedKey("dosing_actuator_key", HydroApiContract.actuatorKeys),
+            description = value.nullableString("description"),
+            active = value.requireBoolean("is_active")
+        )
+    }
+
     override suspend fun crops(): List<ApiCrop> = list("catalogs/crops") { value ->
         ApiCrop(
             cropKey = value.requireAllowedKey("crop_key", HydroApiContract.cropKeys),
@@ -91,7 +120,7 @@ class HttpHydroDomainApi(
         }
 
         val cycleUuid = uuid().toString()
-        return request(
+        return requestIdempotent(
             context = context,
             method = "POST",
             path = "cycles",
@@ -138,6 +167,75 @@ class HttpHydroDomainApi(
         }
     }
 
+    override suspend fun commands(limit: Int, cursor: String?): ApiPage<ApiCommand> {
+        if (limit !in 1..100) throw invalidResponse()
+        val query = buildList {
+            add("limit=$limit")
+            cursor?.let { add("cursor=${encodeQuery(it)}") }
+        }.joinToString("&")
+        val envelope = request(contextProvider(), "GET", "commands?$query")
+        return envelope.page { it.toCommand() }
+    }
+
+    override suspend fun command(commandUuid: String): ApiCommand =
+        request(
+            contextProvider(),
+            "GET",
+            "commands/${requireUuid(commandUuid)}"
+        ).requireDataObject().toCommand()
+
+    override suspend fun createSetStateCommand(
+        actuatorKey: String,
+        targetState: Boolean
+    ): ApiCommand {
+        if (actuatorKey !in HydroApiContract.actuatorKeys) throw invalidResponse()
+        val commandUuid = uuid().toString()
+        return requestIdempotent(
+            context = contextProvider(),
+            method = "POST",
+            path = "commands",
+            body = JSONObject().apply {
+                put("command_uuid", commandUuid)
+                put("actuator_key", actuatorKey)
+                put("command_key", "set_state")
+                put("target_state", if (targetState) 1 else 0)
+                put("expires_at", now().plusSeconds(INTENT_TTL_SECONDS).toString())
+            },
+            idempotencyKey = commandUuid
+        ).requireDataObject().toCommand()
+    }
+
+    override suspend fun dosingRequest(requestUuid: String): ApiDosingRequest =
+        request(
+            contextProvider(),
+            "GET",
+            "dosing-requests/${requireUuid(requestUuid)}"
+        ).requireDataObject().toDosingRequest()
+
+    override suspend fun createDosingRequest(
+        nutrientKey: String,
+        amountMl: Double
+    ): ApiDosingRequest {
+        if (nutrientKey !in HydroApiContract.nutrientKeys || !amountMl.isFinite() ||
+            amountMl <= 0.0 || amountMl > MAX_DOSING_ML
+        ) {
+            throw invalidResponse()
+        }
+        val requestUuid = uuid().toString()
+        return requestIdempotent(
+            context = contextProvider(),
+            method = "POST",
+            path = "dosing-requests",
+            body = JSONObject().apply {
+                put("request_uuid", requestUuid)
+                put("nutrient_key", nutrientKey)
+                put("amount_ml", amountMl)
+                put("expires_at", now().plusSeconds(INTENT_TTL_SECONDS).toString())
+            },
+            idempotencyKey = requestUuid
+        ).requireDataObject().toDosingRequest()
+    }
+
     private suspend fun <T> list(path: String, transform: (JSONObject) -> T): List<T> {
         val envelope = request(contextProvider(), "GET", path)
         return envelope.requireDataArray().objects().map(transform)
@@ -148,6 +246,23 @@ class HttpHydroDomainApi(
         val cycles = envelope.requireDataArray().objects().map { it.toCycle() }
         if (cycles.size > 1) throw invalidResponse()
         return cycles.singleOrNull()
+    }
+
+    private suspend fun requestIdempotent(
+        context: DomainApiContext,
+        method: String,
+        path: String,
+        body: JSONObject,
+        idempotencyKey: String
+    ): JSONObject {
+        repeat(2) { attempt ->
+            try {
+                return request(context, method, path, body, idempotencyKey)
+            } catch (error: DomainApiException) {
+                if (!error.problem.transient || attempt == 1) throw error
+            }
+        }
+        throw invalidResponse()
     }
 
     private suspend fun request(
@@ -215,7 +330,9 @@ class HttpHydroDomainApi(
         val code = json?.optString("code")?.takeIf(String::isNotBlank) ?: "http.$status"
         val detail = json?.optString("detail")?.takeIf(String::isNotBlank)
         val requestId = json?.optString("request_id")?.takeIf(String::isNotBlank)
-        return DomainApiException(ApiProblem(status, code, detail, requestId))
+        return DomainApiException(
+            ApiProblem(status, code, detail, requestId, transient = status == 429 || status >= 500)
+        )
     }
 
     private fun JSONObject.requireMeta(): JSONObject = getJSONObject("meta").also { meta ->
@@ -263,6 +380,70 @@ class HttpHydroDomainApi(
         )
     }
 
+    private fun JSONObject.toCommand(): ApiCommand {
+        val commandKey = requireAllowedKey("command_key", HydroApiContract.commandKeys)
+        val targetState = nullableBinaryState("target_state")
+        val durationMs = nullablePositiveLong("duration_ms")
+        if ((commandKey == "set_state") != (targetState != null) ||
+            (commandKey == "run_for") != (durationMs != null)
+        ) throw invalidResponse()
+
+        val evidence = getJSONObject("physical_evidence")
+        return ApiCommand(
+            commandUuid = requireUuid(requireString("command_uuid")),
+            actuatorKey = requireAllowedKey("actuator_key", HydroApiContract.actuatorKeys),
+            commandKey = commandKey,
+            targetState = targetState,
+            durationMs = durationMs,
+            statusKey = requireAllowedKey("status_key", HydroApiContract.commandStatusKeys),
+            requestedAt = requireInstant("requested_at"),
+            sentAt = nullableInstant("sent_at"),
+            acknowledgedAt = nullableInstant("acknowledged_at"),
+            failedAt = nullableInstant("failed_at"),
+            expiresAt = requireInstant("expires_at"),
+            errorCode = nullableString("error_code"),
+            errorMessage = nullableString("error_message"),
+            physicalEvidence = ApiPhysicalEvidence(
+                acceptedAt = evidence.nullableInstant("accepted_at"),
+                completedAt = evidence.nullableInstant("completed_at"),
+                completionBasis = evidence.nullableString("completion_basis")?.also {
+                    if (it !in HydroApiContract.completionBases) throw invalidResponse()
+                },
+                reportedState = evidence.nullableBinaryState("reported_state")
+            )
+        )
+    }
+
+    private fun JSONObject.toDosingRequest(): ApiDosingRequest = ApiDosingRequest(
+        requestUuid = requireUuid(requireString("request_uuid")),
+        nutrientKey = requireAllowedKey("nutrient_key", HydroApiContract.nutrientKeys),
+        actuatorKey = requireAllowedKey("actuator_key", HydroApiContract.actuatorKeys),
+        amountMl = requireFiniteNumber("amount_ml").takeIf { it > 0.0 } ?: throw invalidResponse(),
+        statusKey = requireAllowedKey("status_key", HydroApiContract.dosingStatusKeys),
+        commandUuid = nullableString("command_uuid")?.let(::requireUuid),
+        applicationUuid = nullableString("application_uuid")?.let(::requireUuid),
+        requestedAt = requireInstant("requested_at"),
+        expiresAt = requireInstant("expires_at"),
+        correlatedAt = nullableInstant("correlated_at"),
+        completedAt = nullableInstant("completed_at"),
+        failedAt = nullableInstant("failed_at"),
+        errorMessage = nullableString("error_message"),
+        updatedAt = requireInstant("updated_at")
+    )
+
+    private fun <T> JSONObject.page(transform: (JSONObject) -> T): ApiPage<T> {
+        val data = requireDataArray()
+        val meta = requireMeta()
+        return ApiPage(
+            items = data.objects().map(transform),
+            hasMore = meta.requireBoolean("has_more"),
+            nextCursor = meta.nullableString("next_cursor")
+        ).also { page ->
+            if (page.hasMore && page.nextCursor.isNullOrBlank()) throw invalidResponse()
+            if (!page.hasMore && page.nextCursor != null) throw invalidResponse()
+        }
+    }
+
     private fun JSONArray.objects(): List<JSONObject> =
         (0 until length()).map { index -> getJSONObject(index) }
 
@@ -283,6 +464,18 @@ class HttpHydroDomainApi(
 
     private fun JSONObject.nullablePositiveInt(key: String): Int? =
         if (!has(key) || isNull(key)) null else requirePositiveInt(key)
+
+    private fun JSONObject.nullablePositiveLong(key: String): Long? =
+        if (!has(key) || isNull(key)) null else getLong(key).takeIf { it > 0L } ?: throw invalidResponse()
+
+    private fun JSONObject.requireBinaryState(key: String): Boolean = when (getInt(key)) {
+        0 -> false
+        1 -> true
+        else -> throw invalidResponse()
+    }
+
+    private fun JSONObject.nullableBinaryState(key: String): Boolean? =
+        if (!has(key) || isNull(key)) null else requireBinaryState(key)
 
     private fun JSONObject.requireFiniteNumber(key: String): Double =
         getDouble(key).takeIf(Double::isFinite) ?: throw invalidResponse()
@@ -344,6 +537,8 @@ class HttpHydroDomainApi(
         private const val API_VERSION = "1"
         private const val CONNECT_TIMEOUT_MILLIS = 10_000
         private const val READ_TIMEOUT_MILLIS = 15_000
+        private const val INTENT_TTL_SECONDS = 5L * 60L
+        private const val MAX_DOSING_ML = 9_999_999.999
         // Keep this aligned with API v1's LogicalKey schema in openapi.json.
         private val LOGICAL_KEY = Regex("^[a-z0-9][a-z0-9_-]{0,63}$")
     }

@@ -42,6 +42,32 @@ data class ApiSensor(
     val active: Boolean
 )
 
+data class ApiActuatorState(
+    val desiredState: Boolean,
+    val reportedState: Boolean?,
+    val availabilityKey: String,
+    val desiredChangedAt: Instant?,
+    val reportedAt: Instant?,
+    val lastSeenAt: Instant?
+)
+
+data class ApiActuator(
+    val actuatorKey: String,
+    val name: String,
+    val actuatorType: String,
+    val safeState: Boolean,
+    val active: Boolean,
+    val state: ApiActuatorState
+)
+
+data class ApiNutrient(
+    val nutrientKey: String,
+    val name: String,
+    val dosingActuatorKey: String,
+    val description: String?,
+    val active: Boolean
+)
+
 data class ApiCrop(
     val cropKey: String,
     val name: String,
@@ -78,6 +104,47 @@ data class ApiMeasurement(
     val readings: Map<String, Double>
 )
 
+data class ApiPhysicalEvidence(
+    val acceptedAt: Instant?,
+    val completedAt: Instant?,
+    val completionBasis: String?,
+    val reportedState: Boolean?
+)
+
+data class ApiCommand(
+    val commandUuid: String,
+    val actuatorKey: String,
+    val commandKey: String,
+    val targetState: Boolean?,
+    val durationMs: Long?,
+    val statusKey: String,
+    val requestedAt: Instant,
+    val sentAt: Instant?,
+    val acknowledgedAt: Instant?,
+    val failedAt: Instant?,
+    val expiresAt: Instant,
+    val errorCode: String?,
+    val errorMessage: String?,
+    val physicalEvidence: ApiPhysicalEvidence
+)
+
+data class ApiDosingRequest(
+    val requestUuid: String,
+    val nutrientKey: String,
+    val actuatorKey: String,
+    val amountMl: Double,
+    val statusKey: String,
+    val commandUuid: String?,
+    val applicationUuid: String?,
+    val requestedAt: Instant,
+    val expiresAt: Instant,
+    val correlatedAt: Instant?,
+    val completedAt: Instant?,
+    val failedAt: Instant?,
+    val errorMessage: String?,
+    val updatedAt: Instant
+)
+
 data class ApiPage<T>(
     val items: List<T>,
     val hasMore: Boolean,
@@ -86,6 +153,8 @@ data class ApiPage<T>(
 
 interface HydroDomainApi {
     suspend fun sensors(): List<ApiSensor>
+    suspend fun actuators(): List<ApiActuator>
+    suspend fun nutrients(): List<ApiNutrient>
     suspend fun crops(): List<ApiCrop>
     suspend fun sensorRanges(cropKey: String): List<ApiSensorRange>
     suspend fun activeCycle(): ApiCycle?
@@ -96,6 +165,11 @@ interface HydroDomainApi {
         capturedFrom: Instant? = null,
         capturedBefore: Instant? = null
     ): ApiPage<ApiMeasurement>
+    suspend fun commands(limit: Int = 100, cursor: String? = null): ApiPage<ApiCommand>
+    suspend fun command(commandUuid: String): ApiCommand
+    suspend fun createSetStateCommand(actuatorKey: String, targetState: Boolean): ApiCommand
+    suspend fun dosingRequest(requestUuid: String): ApiDosingRequest
+    suspend fun createDosingRequest(nutrientKey: String, amountMl: Double): ApiDosingRequest
 }
 
 object HydroApiContract {
@@ -116,4 +190,25 @@ object HydroApiContract {
         "basil",
         "mustard"
     )
+
+    val actuatorKeys: Set<String> = setOf(
+        "flora_grow_pump",
+        "flora_micro_pump",
+        "flora_bloom_pump",
+        "water_pump",
+        "led_lamp",
+        "fan"
+    )
+
+    val nutrientKeys: Set<String> = setOf(
+        "flora_grow",
+        "flora_micro",
+        "flora_bloom"
+    )
+
+    val availabilityKeys: Set<String> = setOf("unknown", "online", "offline")
+    val commandKeys: Set<String> = setOf("set_state", "run_for")
+    val commandStatusKeys: Set<String> = setOf("pending", "sent", "acknowledged", "failed", "expired")
+    val dosingStatusKeys: Set<String> = setOf("pending", "command_created", "completed", "failed", "expired")
+    val completionBases: Set<String> = setOf("output_applied", "feedback_verified", "safe_state_applied")
 }
