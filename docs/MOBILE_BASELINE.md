@@ -34,7 +34,7 @@ de entorno → placeholder inerte.
 
 | Propiedad Gradle | Variable de entorno | Default versionado | Uso |
 |---|---|---|---|
-| `hydrobox.apiBaseUrl` | `HYDROBOX_MOBILE_API_BASE_URL` | URL HTTPS `.invalid` | API legacy/transicional; MB-003 migra a `/api/v1` |
+| `hydrobox.apiBaseUrl` | `HYDROBOX_MOBILE_API_BASE_URL` | URL HTTPS `.invalid` | base versionada `/api/v1` para auth y dominio canónico |
 | `hydrobox.mqttEnabled` | `HYDROBOX_MOBILE_MQTT_ENABLED` | `false` | habilita temporalmente MQTT directo solo en debug |
 | `hydrobox.mqttHost` | `HYDROBOX_MOBILE_MQTT_HOST` | host `.invalid` | broker DEV aislado |
 | `hydrobox.mqttPort` | `HYDROBOX_MOBILE_MQTT_PORT` | `1883` | puerto legacy caracterizado |
@@ -48,20 +48,25 @@ sin passwords persistidos.
 
 ## Inventario de contratos actuales
 
-### API — TRANSITIONAL
+### API — MB-003 IMPLEMENTADO LOCALMENTE / VERIFICACIÓN PENDIENTE
 
-- base URL ahora configurable; anteriormente estaba fija;
+- base URL configurable y HTTPS; anteriormente estaba fija;
 - auth humana usa `/api/v1/auth/token`, `/api/v1/auth/refresh`,
   `/api/v1/auth/logout` y `/api/v1/me` desde MB-002;
-- `GET hortaliza/actual`, `POST hortaliza/cambiar` por ID numérico;
-- `GET registro-mediciones` con columnas fijas legacy;
-- `GET sensores` con aliases de campos;
-- `HttpURLConnection`, timeouts 10 s/15 s y parsing `org.json`;
-- fallos de varias mutaciones se reducen a boolean/null, sin Problem Details.
+- catálogos, ciclo activo/cambio y telemetría usan
+  `/api/v1/sites/{site_key}/*`, Bearer y envelopes v1;
+- DTOs usan `crop_key`, `sensor_key`, UUID, UTC, cursor opaco y preservan cero
+  frente a lectura ausente;
+- `401` invalida la sesión, `403` conserva la sesión y Problem Details no filtra
+  cuerpos, tokens ni detalles del transporte;
+- las pantallas de dominio ya no importan el singleton legacy ni usan
+  `id_hortaliza`, `remote_id` o columnas fijas;
+- exactamente un sitio está soportado; cero o múltiples sitios fallan cerrado
+  hasta implementar selección explícita.
 
-MB-003 debe reemplazar las operaciones de dominio restantes por los
-DTO/envelopes `/api/v1` y keys canónicas ya versionadas en Web. No retirar rutas
-Web legacy antes de que Mobile migre y exista evidencia de cero consumidores.
+Los commits locales MB-003 `b59726b`, `49c85d3` y `a831887` requieren todavía
+push autorizado y matriz CI. Las rutas Web legacy no se retiran hasta publicar
+Mobile, obtener CI verde y comprobar cero consumidores.
 
 ### MQTT — LEGACY / TRANSITIONAL
 
@@ -94,14 +99,12 @@ passwords, tokens o credenciales históricas a fixtures, logs o docs.
 
 ## Discrepancias de dominio caracterizadas
 
-- Cultivos usan IDs remotos 1–6; 3/4 cruzan Rúcula/Acelga frente al orden Core.
-- Existen dos catálogos locales con duraciones diferentes; Core deja la duración
-  por defecto nullable deliberadamente.
-- `ce_value` se usa históricamente como ORP; no representa CE canónica.
-- Nivel de agua se presenta como porcentaje/rangos 80–100 %, mientras Core usa
-  centímetros; no existe conversión aceptada sin calibración física.
-- `fecha` se conserva como string sin timezone; no debe declararse UTC sin
-  conversión diseñada.
+- **RESUELTO LOCALMENTE EN MB-003:** cultivos y sensores usan keys canónicas;
+  desaparece el cruce 3/4 Rúcula/Acelga y las duraciones/rangos provienen del API.
+- **RESUELTO LOCALMENTE EN MB-003:** telemetría usa readings canónicas y UTC;
+  ya no interpreta `ce_value` como ORP ni `fecha` sin timezone.
+- Nivel de agua conserva la unidad entregada por el catálogo. Cualquier
+  transformación física futura continúa gated por calibración Edge.
 - Alias físicos de actuadores se derivan desde títulos UI y no son keys lógicas
   canónicas.
 
@@ -124,11 +127,13 @@ no requiere ni autoriza broker, API, hardware o credenciales reales.
 
 ## Deuda priorizada
 
-1. **MB-003 P0:** cliente `/api/v1`, DTOs/versionado y keys canónicas; reutiliza
-   la sesión segura de MB-002 y retira dependencias de IDs/rutas legacy.
+1. **MB-003 P0:** implementación local cerrada; faltan CI/publicación y cierre
+   de Mobile #4.
 2. **MB-004 P0:** retirar MQTT directo y representar lifecycle real de commands.
-3. **MB-005 P1:** cultivos, telemetría, unidades y timestamps canónicos.
+3. **MB-005 P1:** cerrar UX/unidades/freshness de dominio sobre el API canónico.
 4. **MB-006+**: cache/offline, UX integrada, cámara y hardening final.
 
 MB-002 quedó publicado hasta `54f28c3` y la matriz Android completa pasó en CI
 `35036523635` con los 29 tests del source tree, lint y assemble.
+MB-003 suma 40 pruebas en el source tree local; no se declara verificado hasta
+que `testDebugUnitTest`, `lintDebug` y `assembleDebug` pasen tras el push.

@@ -28,11 +28,12 @@ documentan en `docs/MOBILE_BASELINE.md`.
 El MQTT directo solo puede habilitarse en debug y no debe apuntar a hardware ni
 infraestructura real durante pruebas. Release lo fuerza a deshabilitado.
 
-La URL API debe incluir la base versionada `/api/v1`. El login ya usa token
-opaco, refresh rotatorio, logout y `/me`; no persiste la contraseña. El resto de
-las pantallas conserva endpoints legacy hasta MB-003, por lo que un entorno real
-no debe considerarse listo todavía. El lifecycle y rollout están en
-`docs/MOBILE_AUTH.md`.
+La URL API debe incluir la base versionada `/api/v1`. El login usa token opaco,
+refresh rotatorio, logout y `/me`; no persiste la contraseña. Resumen, sensores,
+historial y cultivos usan además catálogos, ciclos y telemetría v1 con
+`site_key`, Bearer y keys canónicas. MQTT/control directo sigue siendo legacy y
+permanece deshabilitado por defecto hasta MB-004. Los contratos y rollout están
+en `docs/MOBILE_AUTH.md` y `docs/MB_003_API_V1_DESIGN.md`.
 
 ## Verificación
 

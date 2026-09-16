@@ -2,7 +2,7 @@
 
 Actualizado: **2026-09-15**.
 
-Estado: **AUDITADO / DISEÑO CERRADO / IMPLEMENTACIÓN EN PROCESO**.
+Estado: **IMPLEMENTADO LOCALMENTE / VERIFICACIÓN CI Y PUBLICACIÓN PENDIENTES**.
 
 ## Alcance real auditado
 
@@ -79,3 +79,19 @@ legacy. No se ejecuta deployment desde esta fase.
 - Problem Details, `401`, `403`, offline y schema desconocido;
 - ausencia de endpoints/IDs legacy en el source activo;
 - `testDebugUnitTest`, `lintDebug` y `assembleDebug` en CI reproducible.
+
+## Evidencia local
+
+- `b59726b`: auditoría y diseño del cliente API v1;
+- `49c85d3`: port/adapter autenticado, contexto de sitio, DTOs estrictos y tests
+  de contrato HTTP en memoria;
+- `a831887`: migración de Resumen, Sensores, Historial y Cultivos; elimina
+  `HydroApi.kt`, IDs/rutas legacy y telemetría demo;
+- 40 métodos `@Test` existen en el source tree; los 11 nuevos cubren cliente,
+  invalidación de sesión y resolución de `crop_key`;
+- escaneo estático sin `id_hortaliza`, `remote_id`, `registro-mediciones`,
+  `hortaliza/actual`, `hortaliza/cambiar` ni imports del singleton legacy.
+
+El host actual no dispone de Java/JDK (`JAVA_HOME` y `java` ausentes), por lo
+que Gradle no puede ejecutarse localmente. El cierre exige push autorizado y CI
+verde para tests, lint y assemble; hasta entonces Mobile #4 permanece abierta.
