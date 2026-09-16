@@ -120,7 +120,8 @@ no requiere ni autoriza broker, API, hardware o credenciales reales.
 
 ## Deuda priorizada
 
-1. **MB-007 P2:** Automation, alertas, health e historial con estados reales.
+1. **MB-007 P2:** publicar/verificar el cliente Automation y continuar su UX;
+   alertas siguen bloqueadas por HD-016.
 2. **MB-008+**: cámara segura y hardening final.
 3. **CI:** migrar las Actions que aún apuntan a `setup-java@v4`/Node 20.
 
@@ -137,3 +138,5 @@ MB-006 está publicado y verificado en `b6e5be7`–`6700725`: 55 tests en source
 cache network-first persistente y scoped, sesión offline read-only, backoff,
 invalidación y estado visible. CI `35138093458` valida `testDebugUnitTest`,
 `lintDebug` y `assembleDebug`; Mobile #7 está cerrada y MB-007 es la fase actual.
+MB-007 Slice A está local en `95f4e1a`: modelos/cliente Automation, ETag fuerte,
+idempotencia, invalidación, borrado 204 y tres pruebas contractuales; CI pendiente.
