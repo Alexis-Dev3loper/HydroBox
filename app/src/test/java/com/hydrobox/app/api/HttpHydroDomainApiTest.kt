@@ -250,8 +250,15 @@ class HttpHydroDomainApiTest {
         private val responseBody: String
     ) : HttpURLConnection(url) {
         private val requestBody = ByteArrayOutputStream()
+        private var recordedRequestMethod = "GET"
         val headers = mutableMapOf<String, String>()
         val requestBodyText: String get() = requestBody.toString(Charsets.UTF_8.name())
+
+        override fun setRequestMethod(method: String) {
+            recordedRequestMethod = method
+        }
+
+        override fun getRequestMethod(): String = recordedRequestMethod
 
         override fun setRequestProperty(key: String, value: String) {
             headers[key] = value
