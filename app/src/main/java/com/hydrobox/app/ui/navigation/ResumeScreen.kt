@@ -1,6 +1,5 @@
 package com.hydrobox.app.ui.navigation
 
-import android.content.Context
 import androidx.compose.foundation.background
 import androidx.compose.foundation.ExperimentalFoundationApi
 import androidx.compose.foundation.layout.*
@@ -26,12 +25,11 @@ import androidx.compose.ui.draw.clip
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.layout.ContentScale
-import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
-import com.hydrobox.app.api.ApiMedicion
-import com.hydrobox.app.api.HydroApi
+import com.hydrobox.app.api.ApiMeasurement
+import com.hydrobox.app.api.HydroDomainApi
 import com.hydrobox.app.ui.model.Crop
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
@@ -48,12 +46,13 @@ data class SensorCardData(
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ResumeScreen(paddingValues: PaddingValues) {
-    val context = LocalContext.current
-
+fun ResumeScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
     var currentCrop by remember { mutableStateOf<Crop?>(null) }
+    var currentCropName by remember { mutableStateOf<String?>(null) }
     var totalDays by remember { mutableIntStateOf(0) }
     var startEpoch by remember { mutableStateOf<Long?>(null) }
+    var cropLoading by remember { mutableStateOf(true) }
+    var cropError by remember { mutableStateOf<String?>(null) }
 
     // reloj para que el día se actualice solo
     val now by produceState(initialValue = System.currentTimeMillis(), startEpoch) {
@@ -63,45 +62,24 @@ fun ResumeScreen(paddingValues: PaddingValues) {
         }
     }
 
-    // AHORA: usamos primero lo que haya guardado CropsScreen en prefs
-    LaunchedEffect(Unit) {
-        val prefs = context.getSharedPreferences("crop_cycle_prefs", Context.MODE_PRIVATE)
-
-        val savedId = prefs.getInt("remote_id", -1).takeIf { it != -1 }
-        var savedStart = prefs.getLong("start_epoch", -1L).takeIf { it > 0L }
-
-        val actual = try {
-            HydroApi.getHortalizaActual()
+    LaunchedEffect(api) {
+        try {
+            val catalog = api.crops().associateBy { it.cropKey }
+            val cycle = api.activeCycle()
+            val crop = cycle?.cropKey?.let(Crop::fromKey)
+            val catalogCrop = cycle?.cropKey?.let(catalog::get)
+            currentCrop = crop
+            currentCropName = catalogCrop?.name ?: crop?.fallbackDisplayName
+            totalDays = cycle?.plannedDurationDays
+                ?: catalogCrop?.defaultCycleDays
+                ?: crop?.fallbackCycleDays
+                ?: 0
+            startEpoch = cycle?.startedAt?.toEpochMilli()
+            cropError = null
         } catch (_: Exception) {
-            null
-        }
-
-        val chosenId = savedId ?: actual?.id
-
-        if (chosenId != null) {
-            if (savedStart == null) {
-                savedStart = System.currentTimeMillis()
-                prefs.edit()
-                    .putInt("remote_id", chosenId)
-                    .putLong("start_epoch", savedStart!!)
-                    .apply()
-            }
-            startEpoch = savedStart
-            val crop = cropForRemoteId(chosenId)
-            currentCrop = crop
-            totalDays = crop.totalDays
-        } else {
-            // fallback a lechuga si no hay nada ni en prefs ni en API
-            val fallbackId = 1
-            val now = System.currentTimeMillis()
-            prefs.edit()
-                .putInt("remote_id", fallbackId)
-                .putLong("start_epoch", now)
-                .apply()
-            startEpoch = now
-            val crop = cropForRemoteId(fallbackId)
-            currentCrop = crop
-            totalDays = crop.totalDays
+            cropError = "No se pudo cargar el ciclo de cultivo activo."
+        } finally {
+            cropLoading = false
         }
     }
 
@@ -122,14 +100,13 @@ fun ResumeScreen(paddingValues: PaddingValues) {
     }
 
     // --- sensores: último registro de la API cada 15s ---
-    var latest by remember { mutableStateOf<ApiMedicion?>(null) }
+    var latest by remember { mutableStateOf<ApiMeasurement?>(null) }
     var sensorsError by remember { mutableStateOf<String?>(null) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(api) {
         while (true) {
             try {
-                val list = HydroApi.getRegistroMediciones()
-                latest = list.lastOrNull()
+                latest = api.measurements(limit = 1).items.firstOrNull()
                 sensorsError = null
             } catch (e: Exception) {
                 sensorsError = "No se pudieron cargar los datos de los sensores."
@@ -140,7 +117,7 @@ fun ResumeScreen(paddingValues: PaddingValues) {
 
     val sensors = remember(latest) {
         val m = latest
-        val fecha = m?.fecha ?: "Sin datos"
+        val fecha = m?.capturedAt?.toString() ?: "Sin datos"
 
         fun fmt(value: Float?, suffix: String) =
             if (value != null) String.format("%.1f %s", value, suffix) else "-- $suffix"
@@ -148,37 +125,37 @@ fun ResumeScreen(paddingValues: PaddingValues) {
         listOf(
             SensorCardData(
                 title = "Temperatura del aire",
-                valueText = fmt(m?.airTemp, "°C"),
+                valueText = fmt(m?.readings?.get("air_temperature")?.toFloat(), "°C"),
                 subtitle = "Última lectura • $fecha",
                 icon = { Icon(Icons.Filled.DeviceThermostat, contentDescription = null) },
             ),
             SensorCardData(
                 title = "Humedad del aire",
-                valueText = fmt(m?.humidity, "%"),
+                valueText = fmt(m?.readings?.get("air_humidity")?.toFloat(), "%"),
                 subtitle = "Última lectura • $fecha",
                 icon = { Icon(Icons.Filled.Opacity, contentDescription = null) },
             ),
             SensorCardData(
                 title = "Temperatura del agua",
-                valueText = fmt(m?.waterTemp, "°C"),
+                valueText = fmt(m?.readings?.get("water_temperature")?.toFloat(), "°C"),
                 subtitle = "Última lectura • $fecha",
                 icon = { Icon(Icons.Filled.Speed, contentDescription = null) }
             ),
             SensorCardData(
                 title = "pH del agua",
-                valueText = m?.ph?.let { String.format("%.2f", it) } ?: "--",
+                valueText = m?.readings?.get("ph")?.let { String.format("%.2f", it) } ?: "--",
                 subtitle = "Última lectura • $fecha",
                 icon = { Icon(Icons.Filled.InvertColors, contentDescription = null) }
             ),
             SensorCardData(
                 title = "ORP",
-                valueText = m?.orp?.let { "${it.roundToInt()} mV" } ?: "-- mV",
+                valueText = m?.readings?.get("orp")?.let { "${it.roundToInt()} mV" } ?: "-- mV",
                 subtitle = "Última lectura • $fecha",
                 icon = { Icon(Icons.Filled.Speed, contentDescription = null) }
             ),
             SensorCardData(
                 title = "Nivel del agua",
-                valueText = m?.level?.let { "${it.roundToInt()} %" } ?: "-- %",
+                valueText = m?.readings?.get("water_level")?.let { "${it.roundToInt()} %" } ?: "-- %",
                 subtitle = "Última lectura • $fecha",
                 icon = { Icon(Icons.Filled.Opacity, contentDescription = null) }
             )
@@ -193,12 +170,18 @@ fun ResumeScreen(paddingValues: PaddingValues) {
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
         val crop = currentCrop
-        if (crop == null || totalDays == 0) {
+        if (cropLoading) {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
+        } else if (crop == null || totalDays == 0) {
+            Text(
+                cropError ?: "No hay un ciclo de cultivo activo.",
+                color = if (cropError == null) MaterialTheme.colorScheme.onSurfaceVariant
+                else MaterialTheme.colorScheme.error
+            )
         } else {
-            CropHeaderCard(crop = crop)
+            CropHeaderCard(crop = crop, displayName = currentCropName ?: crop.fallbackDisplayName)
 
             GrowthCard(
                 currentDay = currentDay,
@@ -218,7 +201,6 @@ fun ResumeScreen(paddingValues: PaddingValues) {
         SensorsCarousel(cards = sensors)
     }
 }
-
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
 private fun DaysScroller(
@@ -271,9 +253,8 @@ private fun DaysScroller(
         }
     }
 }
-
 @Composable
-private fun CropHeaderCard(crop: Crop) {
+private fun CropHeaderCard(crop: Crop, displayName: String) {
     val surface = MaterialTheme.colorScheme.surface
     val overlay = MaterialTheme.colorScheme.primaryContainer.copy(alpha = 0.10f)
 
@@ -317,12 +298,12 @@ private fun CropHeaderCard(crop: Crop) {
             ) {
                 AsyncImage(
                     model = crop.imageRes,
-                    contentDescription = crop.displayName,
+                    contentDescription = displayName,
                     contentScale = ContentScale.Crop,
                     modifier = Modifier.matchParentSize()
                 )
                 Text(
-                    crop.displayName,
+                    displayName,
                     style = MaterialTheme.typography.titleMedium,
                     modifier = Modifier
                         .align(Alignment.BottomEnd)
@@ -503,14 +484,3 @@ private fun SensorCard(
         }
     }
 }
-
-private fun cropForRemoteId(id: Int): Crop =
-    when (id) {
-        1 -> Crop.LECHUGA
-        2 -> Crop.ESPINACA
-        3 -> Crop.RUCULA
-        4 -> Crop.ACELGA
-        5 -> Crop.ALBAHACA
-        6 -> Crop.MOSTAZA
-        else -> Crop.LECHUGA
-    }

@@ -18,18 +18,18 @@ import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import com.hydrobox.app.api.ApiSensor
-import com.hydrobox.app.api.HydroApi
+import com.hydrobox.app.api.HydroDomainApi
 
 @Composable
-fun SensorsScreen(paddingValues: PaddingValues) {
+fun SensorsScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
     var sensores by remember { mutableStateOf<List<ApiSensor>>(emptyList()) }
     var loading by remember { mutableStateOf(true) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
     var detailSensor by remember { mutableStateOf<ApiSensor?>(null) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(api) {
         try {
-            sensores = HydroApi.getSensores()
+            sensores = api.sensors().filter { it.active }.sortedBy { it.displayOrder }
             errorMsg = null
         } catch (e: Exception) {
             errorMsg = "No se pudieron cargar los sensores registrados."
@@ -71,7 +71,7 @@ fun SensorsScreen(paddingValues: PaddingValues) {
             else -> {
                 sensores.forEach { sensor ->
                     DeviceRowPill(
-                        title = sensor.nombre.ifBlank { "Sensor ${sensor.id}" },
+                        title = sensor.name,
                         onDetails = { detailSensor = sensor }
                     )
                 }
@@ -179,23 +179,14 @@ private fun SensorDetailsDialog(
             }
         },
         title = {
-            Text(sensor.nombre.ifBlank { "Sensor ${sensor.id}" })
+            Text(sensor.name)
         },
         text = {
             Column(verticalArrangement = Arrangement.spacedBy(4.dp)) {
-                sensor.codigo?.let { Text("Código: $it") }
-                sensor.tipo?.let { Text("Tipo: $it") }
-                sensor.unidad?.let { Text("Unidad de medida: $it") }
-                sensor.descripcion?.let { Text(it) }
-
-                if (
-                    sensor.codigo == null &&
-                    sensor.tipo == null &&
-                    sensor.unidad == null &&
-                    sensor.descripcion == null
-                ) {
-                    Text("No hay características adicionales registradas.")
-                }
+                Text("Clave lógica: ${sensor.sensorKey}")
+                Text("Unidad de medida: ${sensor.unitSymbol}")
+                sensor.description?.let { Text(it) }
+                Text(if (sensor.active) "Estado: activo" else "Estado: inactivo")
             }
         }
     )

@@ -60,6 +60,7 @@ private fun MainScaffold(
     var showLogoutDialog by remember { mutableStateOf(false) }
 
     val user = authVM.currentUser.collectAsState().value
+    val auth = authVM.authState.collectAsState().value
 
     val adminName = remember(user?.name, user?.lastName) {
         "${user?.name.orEmpty()} ${user?.lastName.orEmpty()}".trim().ifBlank { "Hydro Admin" }
@@ -169,11 +170,23 @@ private fun MainScaffold(
                 startDestination = Route.Resume.path,
                 modifier = Modifier.padding(padding)
             ) {
-                composable(Route.Resume.path)    { ResumeScreen(paddingValues = PaddingValues()) }
-                composable(Route.Sensors.path)   { SensorsScreen(paddingValues = PaddingValues()) }
+                composable(Route.Resume.path)    {
+                    ResumeScreen(paddingValues = PaddingValues(), api = authVM.domainApi)
+                }
+                composable(Route.Sensors.path)   {
+                    SensorsScreen(paddingValues = PaddingValues(), api = authVM.domainApi)
+                }
                 composable(Route.Actuators.path) { ActuatorsScreen(paddingValues = PaddingValues()) }
-                composable(Route.History.path)   { HistoryScreen(paddingValues = PaddingValues()) }
-                composable(Route.Crops.path)     { CropsScreen(paddingValues = PaddingValues()) }
+                composable(Route.History.path)   {
+                    HistoryScreen(paddingValues = PaddingValues(), api = authVM.domainApi)
+                }
+                composable(Route.Crops.path)     {
+                    CropsScreen(
+                        paddingValues = PaddingValues(),
+                        api = authVM.domainApi,
+                        canChangeCrop = "cycle:write" in auth.scopes
+                    )
+                }
                 composable(Route.Account.path)   { AccountScreen(vm = authVM) }
                 composable(Route.Settings.path)  { SettingsScreen() }
                 composable(Route.Notification.path) { NotificationScreen(paddingValues = PaddingValues()) }

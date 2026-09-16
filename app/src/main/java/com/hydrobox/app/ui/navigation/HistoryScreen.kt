@@ -3,8 +3,10 @@ package com.hydrobox.app.ui.navigation
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.geometry.CornerRadius
-import com.hydrobox.app.api.HydroApi
-import com.hydrobox.app.api.ApiMedicion
+import com.hydrobox.app.api.ApiMeasurement
+import com.hydrobox.app.api.HydroDomainApi
+import java.time.Duration
+import java.time.Instant
 import java.util.Locale
 import androidx.compose.ui.graphics.toArgb
 import androidx.compose.ui.unit.sp
@@ -48,17 +50,17 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun HistoryScreen(paddingValues: PaddingValues) {
+fun HistoryScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
     var range by remember { mutableStateOf(TimeRange.Last7d) }
     var metric by remember { mutableStateOf(Metric.PH) }
 
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
-    var records by remember { mutableStateOf<List<ApiMedicion>>(emptyList()) }
+    var records by remember { mutableStateOf<List<ApiMeasurement>>(emptyList()) }
 
-    LaunchedEffect(Unit) {
+    LaunchedEffect(api) {
         try {
-            records = HydroApi.getRegistroMediciones()
+            records = api.measurements(limit = 100).items
         } catch (e: Exception) {
             error = "No se pudieron cargar las mediciones"
         } finally {
@@ -170,7 +172,9 @@ fun HistoryScreen(paddingValues: PaddingValues) {
                     )
                 }
 
-                StatsRow(series = if (series.isEmpty()) generateDemoSeries(range, metric) else series, metric = metric)
+                if (series.isNotEmpty()) {
+                    StatsRow(series = series, metric = metric)
+                }
             }
         }
 
@@ -469,76 +473,29 @@ private fun formatValue(metric: Metric, v: Float): String =
     }
 
 /**
- * Construye la serie a partir de los datos reales de la API.
- * Si no hay datos (o la métrica está vacía), cae a la serie demo.
+ * Construye la serie cronológica a partir de telemetría canónica. Los valores
+ * ausentes permanecen ausentes y un cero real se conserva como lectura válida.
  */
 private fun buildSeriesFromApi(
-    records: List<ApiMedicion>,
+    records: List<ApiMeasurement>,
     metric: Metric,
-    range: TimeRange
+    range: TimeRange,
+    now: Instant = Instant.now()
 ): List<Float> {
-    if (records.isEmpty()) {
-        return generateDemoSeries(range, metric)
+    val cutoff = when (range) {
+        TimeRange.Today -> now.minus(Duration.ofDays(1))
+        TimeRange.Last7d -> now.minus(Duration.ofDays(7))
+        TimeRange.Last30d -> now.minus(Duration.ofDays(30))
+        TimeRange.Last90d -> now.minus(Duration.ofDays(90))
+        TimeRange.All -> null
     }
 
-    val baseValues: List<Float> = records.mapNotNull { rec ->
-        when (metric) {
-            Metric.PH        -> rec.ph
-            Metric.ORP       -> rec.orp
-            Metric.WaterTemp -> rec.waterTemp
-            Metric.AirTemp   -> rec.airTemp
-            Metric.Humidity  -> rec.humidity
-            Metric.Level     -> rec.level
-        }
-    }
-
-    if (baseValues.isEmpty()) {
-        return generateDemoSeries(range, metric)
-    }
-
-    val maxPoints = when (range) {
-        TimeRange.Today   -> 24
-        TimeRange.Last7d  -> 7 * 24
-        TimeRange.Last30d -> 30 * 24
-        TimeRange.Last90d -> 90 * 24
-        TimeRange.All     -> baseValues.size
-    }
-
-    return if (baseValues.size <= maxPoints) {
-        baseValues
-    } else {
-        baseValues.takeLast(maxPoints)
-    }
-}
-
-/**
- * Serie de fallback cuando no hay datos reales.
- */
-private fun generateDemoSeries(range: TimeRange, metric: Metric): List<Float> {
-    val n = when (range) {
-        TimeRange.Today   -> 12
-        TimeRange.Last7d  -> 28
-        TimeRange.Last30d -> 60
-        TimeRange.Last90d -> 90
-        TimeRange.All     -> 120
-    }
-
-    val base = when (metric) {
-        Metric.PH        -> 6.0f to 0.25f
-        Metric.ORP       -> 700f to 60f
-        Metric.WaterTemp -> 22f to 2.5f
-        Metric.AirTemp   -> 24f to 4f
-        Metric.Humidity  -> 60f to 12f
-        Metric.Level     -> 75f to 18f
-    }
-
-    val (center, amp) = base
-    return List(n) { i ->
-        val t = i / n.toFloat()
-        val wave = kotlin.math.sin(t * 6.283f) * amp * 0.35f
-        val drift = (i % 7 - 3) * (amp * 0.02f)
-        center + wave + drift
-    }
+    val sensorKey = metric.sensorKey
+    return records.asSequence()
+        .filter { cutoff == null || !it.capturedAt.isBefore(cutoff) }
+        .sortedBy(ApiMeasurement::capturedAt)
+        .mapNotNull { it.readings[sensorKey]?.toFloat() }
+        .toList()
 }
 
 /* ===================== Enums ===================== */
@@ -547,7 +504,8 @@ private enum class TimeRange(val label: String) {
     Today("Hoy"), Last7d("7 días"), Last30d("30 días"), Last90d("90 días"), All("Todo")
 }
 
-private enum class Metric(val label: String) {
-    PH("pH"), ORP("ORP"), WaterTemp("Temp Agua"),
-    AirTemp("Temp Aire"), Humidity("Humedad"), Level("Nivel Agua")
+private enum class Metric(val label: String, val sensorKey: String) {
+    PH("pH", "ph"), ORP("ORP", "orp"), WaterTemp("Temp Agua", "water_temperature"),
+    AirTemp("Temp Aire", "air_temperature"), Humidity("Humedad", "air_humidity"),
+    Level("Nivel Agua", "water_level")
 }

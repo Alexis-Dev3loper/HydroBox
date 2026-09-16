@@ -26,7 +26,8 @@ import androidx.compose.material.icons.filled.DeviceThermostat
 import androidx.compose.material.icons.filled.InvertColors
 import androidx.compose.material.icons.filled.Opacity
 import androidx.compose.material.icons.filled.Speed
-import com.hydrobox.app.api.HydroApi
+import com.hydrobox.app.api.ApiSensorRange
+import com.hydrobox.app.api.HydroDomainApi
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.runtime.getValue
@@ -39,6 +40,7 @@ import androidx.compose.ui.draw.shadow
 import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.graphics.graphicsLayer
+import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.layout.ContentScale
 import androidx.compose.ui.platform.LocalContext
 import androidx.compose.ui.text.font.FontWeight
@@ -46,150 +48,73 @@ import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import coil.request.ImageRequest
-import com.hydrobox.app.R
+import com.hydrobox.app.ui.model.Crop
 import kotlin.math.absoluteValue
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.runtime.derivedStateOf
-import android.content.Context
+import java.util.Locale
 
-// Ahora incluye rangos de ORP y Nivel del agua
 private data class CropSpec(
-    val remoteId: Int,
-    val code: String,
+    val cropKey: String,
     val name: String,
     val imageRes: Int,
     val totalDays: Int,
-    val airTempRange: String,
-    val humidityRange: String,
-    val waterTempRange: String,
-    val phRange: String,
-    val orpRange: String,
-    val levelRange: String
-)
-
-// Valores de ORP / Nivel puedes ajustarlos luego si lo deseas
-private val cropsCatalog = listOf(
-    CropSpec(
-        1, "lechuga",  "Lechuga",  R.drawable.crop_lechuga,  20,
-        airTempRange = "22°–25°",
-        humidityRange = "50–70 %",
-        waterTempRange = "22°–25°",
-        phRange = "5.8–6.5",
-        orpRange = "250–400 mV",
-        levelRange = "80–100 %"
-    ),
-    CropSpec(
-        2, "espinaca", "Espinaca", R.drawable.crop_espinaca, 30,
-        airTempRange = "16°–24°",
-        humidityRange = "50–70 %",
-        waterTempRange = "20°–23°",
-        phRange = "6.0–7.0",
-        orpRange = "250–400 mV",
-        levelRange = "80–100 %"
-    ),
-    CropSpec(
-        3, "rucula",   "Rúcula",   R.drawable.crop_rucula,   20,
-        airTempRange = "18°–24°",
-        humidityRange = "50–70 %",
-        waterTempRange = "20°–23°",
-        phRange = "6.0–6.8",
-        orpRange = "250–400 mV",
-        levelRange = "80–100 %"
-    ),
-    CropSpec(
-        4, "acelga",   "Acelga",   R.drawable.crop_acelga,   35,
-        airTempRange = "18°–24°",
-        humidityRange = "50–70 %",
-        waterTempRange = "20°–23°",
-        phRange = "6.0–7.0",
-        orpRange = "250–400 mV",
-        levelRange = "80–100 %"
-    ),
-    CropSpec(
-        5, "albahaca", "Albahaca", R.drawable.crop_albahaca, 21,
-        airTempRange = "22°–30°",
-        humidityRange = "40–60 %",
-        waterTempRange = "22°–25°",
-        phRange = "5.5–6.5",
-        orpRange = "250–400 mV",
-        levelRange = "80–100 %"
-    ),
-    CropSpec(
-        6, "mostaza",  "Mostaza",  R.drawable.crop_mostaza,  25,
-        airTempRange = "15°–25°",
-        humidityRange = "50–70 %",
-        waterTempRange = "18°–22°",
-        phRange = "6.0–7.0",
-        orpRange = "250–400 mV",
-        levelRange = "80–100 %"
-    )
+    val ranges: List<ApiSensorRange>
 )
 
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
-fun CropsScreen(paddingValues: PaddingValues) {
-    val context = LocalContext.current
-    val prefs = remember {
-        context.getSharedPreferences("crop_cycle_prefs", Context.MODE_PRIVATE)
-    }
+fun CropsScreen(
+    paddingValues: PaddingValues,
+    api: HydroDomainApi,
+    canChangeCrop: Boolean
+) {
     val scrollState = rememberScrollState()
 
-    var activeIndex by remember { mutableIntStateOf(0) }
+    var cropsCatalog by remember { mutableStateOf<List<CropSpec>>(emptyList()) }
+    var activeIndex by remember { mutableIntStateOf(-1) }
     var activeDaysElapsed by remember { mutableIntStateOf(1) }
-    val pagerState = rememberPagerState(pageCount = { cropsCatalog.size })
+    val pagerState = rememberPagerState(pageCount = { cropsCatalog.size.coerceAtLeast(1) })
     var confirmForIndex by remember { mutableStateOf<Int?>(null) }
 
     val scope = rememberCoroutineScope()
     var loading by remember { mutableStateOf(true) }
     var errorMsg by remember { mutableStateOf<String?>(null) }
 
-    // Ahora priorizamos lo guardado en SharedPreferences.
-    LaunchedEffect(Unit) {
-        val savedId = prefs.getInt("remote_id", -1).takeIf { it != -1 }
-        var savedStart = prefs.getLong("start_epoch", -1L).takeIf { it > 0L }
-
-        var apiError: String? = null
-        val actual = try {
-            HydroApi.getHortalizaActual()
-        } catch (e: Exception) {
-            apiError = "No se pudo cargar la hortaliza actual"
-            null
-        }
-
-        // 1) Preferimos lo que está guardado localmente
-        val chosenId = savedId ?: actual?.id
-
-        if (chosenId != null) {
-            // Si no había start_epoch lo inicializamos ahora
-            if (savedStart == null) {
-                savedStart = System.currentTimeMillis()
-                prefs.edit()
-                    .putInt("remote_id", chosenId)
-                    .putLong("start_epoch", savedStart!!)
-                    .apply()
+    LaunchedEffect(api) {
+        try {
+            val catalogSpecs = api.crops()
+                .filter { it.active }
+                .mapNotNull { crop ->
+                    val local = Crop.fromKey(crop.cropKey) ?: return@mapNotNull null
+                    CropSpec(
+                        cropKey = crop.cropKey,
+                        name = crop.name,
+                        imageRes = local.imageRes,
+                        totalDays = crop.defaultCycleDays ?: local.fallbackCycleDays,
+                        ranges = api.sensorRanges(crop.cropKey)
+                    )
+                }
+            val activeCycle = api.activeCycle()
+            val activePlannedDays = activeCycle?.plannedDurationDays
+            val specs = catalogSpecs.map { spec ->
+                if (spec.cropKey == activeCycle?.cropKey && activePlannedDays != null) {
+                    spec.copy(totalDays = activePlannedDays)
+                } else {
+                    spec
+                }
             }
-
-            val idx = cropsCatalog.indexOfFirst { it.remoteId == chosenId }
-            if (idx != -1) {
-                activeIndex = idx
-                activeDaysElapsed = computeDaysElapsed(savedStart!!)
-                pagerState.scrollToPage(idx)
-            }
-        } else {
-            // Primer arranque y API caída → fallback a la primera hortaliza
-            val fallbackId = cropsCatalog.first().remoteId
-            val now = System.currentTimeMillis()
-            prefs.edit()
-                .putInt("remote_id", fallbackId)
-                .putLong("start_epoch", now)
-                .apply()
-            activeIndex = 0
-            activeDaysElapsed = 1
-            pagerState.scrollToPage(0)
+            cropsCatalog = specs
+            activeIndex = specs.indexOfFirst { it.cropKey == activeCycle?.cropKey }
+            activeDaysElapsed = activeCycle?.startedAt?.toEpochMilli()?.let(::computeDaysElapsed) ?: 1
+            val initialPage = activeIndex.takeIf { it >= 0 } ?: 0
+            if (specs.isNotEmpty()) pagerState.scrollToPage(initialPage)
+            errorMsg = null
+        } catch (_: Exception) {
+            errorMsg = "No se pudo cargar el catálogo de cultivos."
+        } finally {
+            loading = false
         }
-
-        errorMsg = apiError
-        loading = false
     }
 
     Column(
@@ -221,6 +146,14 @@ fun CropsScreen(paddingValues: PaddingValues) {
             )
         }
 
+        if (cropsCatalog.isEmpty()) {
+            if (!loading && errorMsg == null) {
+                Text(
+                    "No hay cultivos activos disponibles.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+        } else {
         Box {
             HorizontalPager(
                 state = pagerState,
@@ -278,16 +211,8 @@ fun CropsScreen(paddingValues: PaddingValues) {
                             shape = RoundedCornerShape(22.dp)
                         )
                         .noRippleClickable {
-                            if (page != activeIndex) {
-                                val remaining =
-                                    cropsCatalog[activeIndex].totalDays - activeDaysElapsed
-                                if (remaining > 0) {
-                                    confirmForIndex = page
-                                } else {
-                                    activeIndex = page
-                                    activeDaysElapsed = 1
-                                    // si quisieras persistir sin dialog, aquí
-                                }
+                            if (canChangeCrop && page != activeIndex) {
+                                confirmForIndex = page
                             }
                         }
                 ) {
@@ -317,7 +242,12 @@ fun CropsScreen(paddingValues: PaddingValues) {
             AssistChip(
                 onClick = {},
                 enabled = false,
-                label = { Text("Toca la imagen para seleccionar") },
+                label = {
+                    Text(
+                        if (canChangeCrop) "Toca la imagen para seleccionar"
+                        else "Tu cuenta no puede cambiar el cultivo"
+                    )
+                },
                 leadingIcon = {
                     Icon(
                         Icons.Filled.Opacity,
@@ -330,46 +260,15 @@ fun CropsScreen(paddingValues: PaddingValues) {
 
         val currentCrop = cropsCatalog[pagerState.currentPage]
 
-        // AHORA: 6 tarjetas, una por cada sensor con su rango ideal
         val cards = remember(currentCrop) {
-            listOf(
+            currentCrop.ranges.map { range ->
                 SensorCardData(
-                    title = "Temperatura del aire",
-                    valueText = currentCrop.airTempRange,
+                    title = sensorTitle(range.sensorKey),
+                    valueText = formatSensorRange(range),
                     subtitle = "Rango óptimo",
-                    icon = { Icon(Icons.Filled.DeviceThermostat, null) }
-                ),
-                SensorCardData(
-                    title = "Humedad del aire",
-                    valueText = currentCrop.humidityRange,
-                    subtitle = "Rango óptimo",
-                    icon = { Icon(Icons.Filled.Opacity, null) }
-                ),
-                SensorCardData(
-                    title = "Temperatura del agua",
-                    valueText = currentCrop.waterTempRange,
-                    subtitle = "Rango óptimo",
-                    icon = { Icon(Icons.Filled.Speed, null) }
-                ),
-                SensorCardData(
-                    title = "pH del agua",
-                    valueText = currentCrop.phRange,
-                    subtitle = "Rango óptimo",
-                    icon = { Icon(Icons.Filled.InvertColors, null) }
-                ),
-                SensorCardData(
-                    title = "ORP",
-                    valueText = currentCrop.orpRange,
-                    subtitle = "Rango óptimo",
-                    icon = { Icon(Icons.Filled.Speed, null) }
-                ),
-                SensorCardData(
-                    title = "Nivel del agua",
-                    valueText = currentCrop.levelRange,
-                    subtitle = "Rango óptimo",
-                    icon = { Icon(Icons.Filled.Opacity, null) }
+                    icon = { Icon(sensorIcon(range.sensorKey), null) }
                 )
-            )
+            }
         }
 
         Column(verticalArrangement = Arrangement.spacedBy(16.dp)) {
@@ -379,26 +278,38 @@ fun CropsScreen(paddingValues: PaddingValues) {
                 totalDays = currentCrop.totalDays
             )
 
-            SensorsCarouselClone(
-                cards = cards,
-                isCompact = pagerState.currentPage != activeIndex
-            )
+            if (cards.isEmpty()) {
+                Text(
+                    "No hay rangos configurados para este cultivo.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                SensorsCarouselClone(
+                    cards = cards,
+                    isCompact = pagerState.currentPage != activeIndex
+                )
+            }
+        }
         }
     }
 
     val pendingIndex = confirmForIndex
     if (pendingIndex != null) {
         val pendingCrop = cropsCatalog[pendingIndex]
-        val activeCrop = cropsCatalog[activeIndex]
-        val remaining = (activeCrop.totalDays - activeDaysElapsed).coerceAtLeast(0)
+        val activeCrop = cropsCatalog.getOrNull(activeIndex)
+        val remaining = activeCrop?.let { (it.totalDays - activeDaysElapsed).coerceAtLeast(0) }
 
         AlertDialog(
             onDismissRequest = { confirmForIndex = null },
             title = { Text("Cambiar a ${pendingCrop.name}?") },
             text = {
                 Text(
-                    "Actualmente tienes ${activeCrop.name} con $remaining días pendientes para completar su ciclo. " +
-                            "Si cambias ahora, se dará por abandonada.",
+                    if (activeCrop == null) {
+                        "Se iniciará un nuevo ciclo con ${pendingCrop.name}."
+                    } else {
+                        "Actualmente tienes ${activeCrop.name} con $remaining días pendientes para completar su ciclo. " +
+                                "Si cambias ahora, se dará por abandonado."
+                    },
                     color = MaterialTheme.colorScheme.onSurfaceVariant
                 )
             },
@@ -407,20 +318,13 @@ fun CropsScreen(paddingValues: PaddingValues) {
                     onClick = {
                         scope.launch {
                             try {
-                                val ok = HydroApi.cambiarHortaliza(pendingCrop.remoteId)
-                                if (ok) {
-                                    val now = System.currentTimeMillis()
-                                    prefs.edit()
-                                        .putInt("remote_id", pendingCrop.remoteId)
-                                        .putLong("start_epoch", now)
-                                        .apply()
-
-                                    activeIndex = pendingIndex
-                                    activeDaysElapsed = 1
-                                    pagerState.scrollToPage(pendingIndex)
-                                }
+                                api.changeActiveCrop(pendingCrop.cropKey, pendingCrop.totalDays)
+                                activeIndex = pendingIndex
+                                activeDaysElapsed = 1
+                                pagerState.scrollToPage(pendingIndex)
+                                errorMsg = null
                             } catch (_: Exception) {
-                                // aquí podrías mostrar un snackbar
+                                errorMsg = "No se pudo cambiar el cultivo activo."
                             } finally {
                                 confirmForIndex = null
                             }
@@ -673,3 +577,26 @@ private fun computeDaysElapsed(startEpoch: Long, now: Long = System.currentTimeM
     val days = (diff / millisPerDay).toInt() + 1
     return days.coerceAtLeast(1)
 }
+
+private fun sensorTitle(sensorKey: String): String = when (sensorKey) {
+    "air_temperature" -> "Temperatura del aire"
+    "air_humidity" -> "Humedad del aire"
+    "water_temperature" -> "Temperatura del agua"
+    "ph" -> "pH del agua"
+    "orp" -> "ORP"
+    "water_level" -> "Nivel del agua"
+    else -> sensorKey
+}
+
+private fun sensorIcon(sensorKey: String): ImageVector = when (sensorKey) {
+    "air_temperature" -> Icons.Filled.DeviceThermostat
+    "air_humidity", "water_level" -> Icons.Filled.Opacity
+    "ph" -> Icons.Filled.InvertColors
+    else -> Icons.Filled.Speed
+}
+
+private fun formatSensorRange(range: ApiSensorRange): String =
+    "${formatRangeNumber(range.minValue)}–${formatRangeNumber(range.maxValue)} ${range.unitSymbol}"
+
+private fun formatRangeNumber(value: Double): String =
+    String.format(Locale.US, "%.2f", value).trimEnd('0').trimEnd('.')
