@@ -75,7 +75,7 @@ Web legacy antes de que Mobile migre y exista evidencia de cero consumidores.
 `LegacyMqttContractTest` congela este shape solo para impedir cambios
 accidentales durante la migración. No lo convierte en contrato objetivo.
 
-### Persistencia local — MB-002 IMPLEMENTADO LOCALMENTE / CI PENDIENTE
+### Persistencia local — MB-002 IMPLEMENTADO / VERIFICADO / PUBLICADO
 
 - Room `hydro_local.db`, schema 4, tabla `users_local` sin password;
 - migration explícita 3→4 preserva el perfil no sensible y descarta
@@ -124,9 +124,11 @@ no requiere ni autoriza broker, API, hardware o credenciales reales.
 
 ## Deuda priorizada
 
-1. **MB-002 P0:** implementación local en `86b7762`; falta ejecutar CI Android,
-   corregir cualquier fallo, publicar y cerrar evidencia/documentación.
-2. **MB-003 P0:** cliente `/api/v1`, auth, DTOs/versionado y keys canónicas.
-3. **MB-004 P0:** retirar MQTT directo y representar lifecycle real de commands.
-4. **MB-005 P1:** cultivos, telemetría, unidades y timestamps canónicos.
-5. **MB-006+**: cache/offline, UX integrada, cámara y hardening final.
+1. **MB-003 P0:** cliente `/api/v1`, DTOs/versionado y keys canónicas; reutiliza
+   la sesión segura de MB-002 y retira dependencias de IDs/rutas legacy.
+2. **MB-004 P0:** retirar MQTT directo y representar lifecycle real de commands.
+3. **MB-005 P1:** cultivos, telemetría, unidades y timestamps canónicos.
+4. **MB-006+**: cache/offline, UX integrada, cámara y hardening final.
+
+MB-002 quedó publicado hasta `54f28c3` y la matriz Android completa pasó en CI
+`35036523635` con los 29 tests del source tree, lint y assemble.

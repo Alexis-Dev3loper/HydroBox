@@ -2,7 +2,7 @@
 
 Actualizado: **2026-09-15**.
 
-Estado: **IMPLEMENTADO LOCALMENTE / VERIFICACIÓN CI Y PUBLICACIÓN PENDIENTES**.
+Estado: **IMPLEMENTADO / VERIFICADO / PUBLICADO**.
 
 ## Contrato
 
@@ -101,6 +101,11 @@ lintDebug
 assembleDebug
 ```
 
-El host actual no tiene JDK/Android SDK. Por eso estos resultados deben
-confirmarse en la CI reproducible de MB-001 antes de marcar MB-002 como
-VERIFICADO o cerrar su issue.
+El host actual no tiene JDK/Android SDK. La CI reproducible de MB-001 ejecutó
+la matriz completa sobre `54f28c3` y terminó satisfactoriamente en el run
+[`35036523635`](https://github.com/Alexis-Dev3loper/HydroBox/actions/runs/35036523635):
+`testDebugUnitTest`, `lintDebug` y `assembleDebug` pasaron con JDK 17/SDK 36.
+Los dos primeros intentos detectaron y permitieron corregir, respectivamente,
+dos errores de compilación Kotlin y una dependencia de test no disponible en
+el source set Android; el resultado final no depende de sockets ni módulos JDK
+adicionales.

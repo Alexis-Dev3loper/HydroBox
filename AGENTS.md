@@ -19,8 +19,9 @@ Este repositorio es la aplicación Android de HydroBox. En el workspace completo
   defecto y forzado off en release hasta retirarlo en MB-004.
 - Room v4 elimina irreversiblemente `passwordPlain`; access/refresh tokens solo
   se guardan cifrados con una clave Android Keystore y quedan fuera de backups.
-- MB-001 validó CI reproducible con JDK 17/SDK 36. MB-002 añade 19 pruebas y
-  permanece local hasta verificar en esa CI; el host actual no tiene JDK/SDK.
+- MB-001 validó CI reproducible con JDK 17/SDK 36. MB-002 quedó publicado y
+  verificado en CI `35036523635`: el source tree suma 29 pruebas, y también
+  pasan `lintDebug` y `assembleDebug`. El host actual no tiene JDK/SDK.
 
 ## Reglas específicas
 
