@@ -16,10 +16,10 @@ Este repositorio es la aplicación Android de HydroBox. En el workspace completo
 - Auth humana usa `/api/v1/auth/*` y `/api/v1/me`; MB-003 implementa además
   catálogos, ciclos y telemetría `/api/v1/sites/{site_key}/*` con Bearer,
   Problem Details, UUID/UTC y keys canónicas. Está publicado y verificado en CI.
-- MB-004 está implementado localmente en `2f8907f`–`9072966`: commands y
+- MB-004 está publicado y verificado en `2f8907f`–`92c9862`: commands y
   dosing pasan por API v1, la UI separa intención/lifecycle/estado reportado y
-  se retiraron cliente, configuración y dependencia MQTT directos. Falta
-  publicar esos commits y confirmar la matriz Android en CI.
+  se retiraron cliente, configuración y dependencia MQTT directos. La CI
+  `35081160677` pasa tests, lint y assemble; Mobile #5 está cerrada.
 - Room v4 elimina irreversiblemente `passwordPlain`; access/refresh tokens solo
   se guardan cifrados con una clave Android Keystore y quedan fuera de backups.
 - MB-001 validó CI reproducible con JDK 17/SDK 36. MB-002 quedó publicado y

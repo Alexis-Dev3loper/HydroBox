@@ -2,7 +2,7 @@
 
 Actualizado: **2026-09-16**.
 
-Estado: **IMPLEMENTADO LOCALMENTE / VERIFICACIÓN CI Y PUBLICACIÓN PENDIENTES**.
+Estado: **IMPLEMENTADO / VERIFICADO / PUBLICADO**.
 
 ## Problema auditado
 
@@ -68,5 +68,6 @@ La API v1 publicada ya expone las fronteras necesarias:
 - `9072966`: UI de actuadores/dosing por API y retiro de MQTT/HiveMQ/config.
 - El source tree conserva **40 tests** y el escaneo estático no encuentra
   referencias activas a `HydroMqtt`, HiveMQ, variables MQTT ni aliases físicos.
-- `git diff --check` pasa. El host no dispone de JDK/SDK; la compilación, lint y
-  ejecución real de los tests quedan pendientes de CI después del push.
+- `git diff --check` pasa. La CI `35081160677` ejecuta con JDK 17/SDK 36
+  `testDebugUnitTest`, `lintDebug` y `assembleDebug`: **BUILD SUCCESSFUL**.
+- Mobile #5 está cerrada. No hubo deployment, broker, API ni hardware reales.

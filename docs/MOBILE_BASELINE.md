@@ -14,7 +14,7 @@ Estado: **IMPLEMENTADO / VERIFICADO / PUBLICADO**.
 | UI | Jetpack Compose, Material 3, Navigation y Coil |
 | Datos locales | Room 2.6.1 y DataStore 1.1.1 |
 | Concurrencia | Kotlin coroutines 1.9.0 |
-| Red | `HttpURLConnection` sobre API v1; MQTT directo retirado localmente en MB-004 |
+| Red | `HttpURLConnection` sobre API v1; MQTT directo retirado en MB-004 |
 | Tests previos | solo ejemplos del template; no caracterizaban HydroBox |
 
 El host auditado no tiene JDK, Android SDK ni caché Gradle, por lo que el build
@@ -24,8 +24,8 @@ prerequisito y, con toolchain disponible, ejecuta la misma matriz usada por CI:
 
 GitHub Actions `35002475731` validó el baseline con JDK 17, Android SDK 36 y
 Build Tools 36.0.0: **10/10 unit tests**, `lintDebug`, `assembleDebug` y
-`BUILD SUCCESSFUL`. MB-004 retira localmente el cliente MQTT y su reconnect;
-esa unidad aún requiere la misma matriz CI antes de considerarse verificada.
+`BUILD SUCCESSFUL`. MB-004 retira el cliente MQTT y su reconnect; la misma
+matriz pasó de nuevo en CI `35081160677` sobre el cierre publicado.
 
 ## Matriz de configuración
 
@@ -62,7 +62,7 @@ MB-003 está publicado hasta `0b7f10c`. La matriz CI `35060435836` valida sus
 40 pruebas, `lintDebug` y `assembleDebug`; Mobile #4 está cerrada. Las rutas Web
 legacy no se retiran hasta comprobar cero consumidores operacionales.
 
-### Commands/dosing API — MB-004 IMPLEMENTADO LOCALMENTE
+### Commands/dosing API — MB-004 IMPLEMENTADO / VERIFICADO / PUBLICADO
 
 - catálogos, commands y dosing requests usan API v1 autenticada por sitio;
 - cada mutación reutilizable usa UUID e `Idempotency-Key`, expiry corta y un
@@ -72,8 +72,7 @@ legacy no se retiran hasta comprobar cero consumidores operacionales.
 - dosing registra mililitros y deja calibración/correlación física a Edge;
 - `HydroMqtt`, contrato/configuración MQTT y HiveMQ fueron retirados.
 
-Commits locales: `2f8907f`–`9072966`. Falta publicar y validar CI antes de
-marcar MB-004 como verificado.
+Evidencia: `2f8907f`–`92c9862`; CI `35081160677`; Mobile #5 cerrada.
 
 ### Persistencia local — MB-002 IMPLEMENTADO / VERIFICADO / PUBLICADO
 
@@ -100,7 +99,7 @@ passwords, tokens o credenciales históricas a fixtures, logs o docs.
   ya no interpreta `ce_value` como ORP ni `fecha` sin timezone.
 - Nivel de agua conserva la unidad entregada por el catálogo. Cualquier
   transformación física futura continúa gated por calibración Edge.
-- **RESUELTO LOCALMENTE EN MB-004:** actuadores y nutrientes usan keys lógicas
+- **RESUELTO EN MB-004:** actuadores y nutrientes usan keys lógicas
   de catálogos API; la UI ya no deriva aliases físicos desde títulos.
 
 MB-003/MB-005 migran estas discrepancias; MB-001 no inventa mappings.
@@ -121,13 +120,13 @@ no requiere ni autoriza broker, API, hardware o credenciales reales.
 
 ## Deuda priorizada
 
-1. **MB-004 P0:** publicar y verificar en CI la implementación local.
-2. **MB-005 P1:** cerrar UX/unidades/freshness de dominio sobre el API canónico.
-3. **MB-006+**: cache/offline, UX integrada, cámara y hardening final.
+1. **MB-005 P1:** auditar y cerrar UX/unidades/freshness de dominio sobre API.
+2. **MB-006 P1:** cache/offline y manejo de errores/reconexión.
+3. **MB-007+**: UX integrada, cámara y hardening final.
 
 MB-002 quedó publicado hasta `54f28c3` y la matriz Android completa pasó en CI
 `35036523635` con los 29 tests del source tree, lint y assemble.
 MB-003 está publicado hasta `0b7f10c`; `testDebugUnitTest` (**40/40**),
 `lintDebug` y `assembleDebug` pasan en CI `35060435836`.
-MB-004 está implementado localmente en `2f8907f`–`9072966`; mantiene 40 tests
-en source y no conserva referencias activas a MQTT, pero aún no tiene CI.
+MB-004 está publicado en `2f8907f`–`92c9862`; CI `35081160677` valida
+`testDebugUnitTest`, `lintDebug` y `assembleDebug`. Mobile #5 está cerrada.
