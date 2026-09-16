@@ -31,7 +31,14 @@ class SessionManager(
             issued = pair
             val principal = api.currentPrincipal(pair.accessToken)
             val localUserId = persistPrincipal(principal)
-            val session = StoredSession(localUserId, persistent, pair)
+            val session = StoredSession(
+                localUserId = localUserId,
+                persistent = persistent,
+                tokens = pair,
+                principalUuid = principal.principalUuid,
+                siteKeys = principal.siteKeys.distinct(),
+                scopes = principal.scopes.toSet()
+            )
             vault.write(session)
             mutableState.value = authenticatedState(localUserId, principal)
             true
@@ -55,22 +62,30 @@ class SessionManager(
             return@withLock clearAndLogOut()
         }
 
-        val usable = ensureFresh(stored) ?: return@withLock false
+        if (stored.tokens.refreshExpiresAtEpochMillis <= nowEpochMillis()) {
+            return@withLock clearAndLogOut()
+        }
+        offlineState(stored)?.let { mutableState.value = it }
+
+        val usable = ensureFresh(stored) ?: return@withLock mutableState.value.isLoggedIn
         try {
             val principal = api.currentPrincipal(usable.tokens.accessToken)
             val localUserId = persistPrincipal(principal)
-            if (localUserId != usable.localUserId) {
-                vault.write(usable.copy(localUserId = localUserId))
-            }
+            vault.write(usable.copy(
+                localUserId = localUserId,
+                principalUuid = principal.principalUuid,
+                siteKeys = principal.siteKeys.distinct(),
+                scopes = principal.scopes.toSet()
+            ))
             mutableState.value = authenticatedState(localUserId, principal)
             true
         } catch (error: AuthApiException) {
             if (error.isTerminal) clearAndLogOut()
-            false
+            mutableState.value.isLoggedIn
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (_: Exception) {
-            false
+            mutableState.value.isLoggedIn
         }
     }
 
@@ -82,6 +97,34 @@ class SessionManager(
             userId = usable.localUserId
         )
         usable.tokens.accessToken
+    }
+
+    suspend fun accessTokenForDomain(): String? {
+        accessToken()?.let { return it }
+        return mutex.withLock {
+            if (!mutableState.value.isLoggedIn || !mutableState.value.offlineMode) {
+                return@withLock null
+            }
+            val stored = vault.read() ?: return@withLock null
+            if (stored.tokens.refreshExpiresAtEpochMillis <= nowEpochMillis()) {
+                return@withLock null
+            }
+            stored.tokens.accessToken
+        }
+    }
+
+    fun cacheScopeKey(): String? {
+        val snapshot = mutableState.value
+        val userId = snapshot.userId ?: return null
+        val siteKey = snapshot.siteKeys.distinct().singleOrNull() ?: return null
+        if (!snapshot.isLoggedIn) return null
+        return "$userId:$siteKey"
+    }
+
+    suspend fun markDomainSessionVerified() = mutex.withLock {
+        if (mutableState.value.isLoggedIn) {
+            mutableState.value = mutableState.value.copy(offlineMode = false)
+        }
     }
 
     suspend fun invalidate() = mutex.withLock {
@@ -168,8 +211,22 @@ class SessionManager(
         isLoggedIn = true,
         userId = localUserId,
         siteKeys = principal.siteKeys.distinct(),
-        scopes = principal.scopes.toSet()
+        scopes = principal.scopes.toSet(),
+        offlineMode = false
     )
+
+    private fun offlineState(stored: StoredSession): AuthState? {
+        if (stored.principalUuid.isNullOrBlank()) return null
+        val sites = stored.siteKeys.distinct()
+        if (sites.size != 1) return null
+        return AuthState(
+            isLoggedIn = true,
+            userId = stored.localUserId,
+            siteKeys = sites,
+            scopes = stored.scopes,
+            offlineMode = true
+        )
+    }
 
     private suspend fun clearAndLogOut(): Boolean {
         vault.clear()

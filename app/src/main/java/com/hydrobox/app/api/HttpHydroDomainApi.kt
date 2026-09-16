@@ -2,6 +2,9 @@ package com.hydrobox.app.api
 
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.Dispatchers
+import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import kotlinx.coroutines.withContext
 import org.json.JSONArray
 import org.json.JSONObject
@@ -11,6 +14,7 @@ import java.io.OutputStreamWriter
 import java.net.HttpURLConnection
 import java.net.URL
 import java.net.URLEncoder
+import java.time.Duration
 import java.time.Instant
 import java.util.UUID
 
@@ -18,12 +22,18 @@ class HttpHydroDomainApi(
     private val baseUrl: String,
     private val contextProvider: suspend () -> DomainApiContext,
     private val onUnauthorized: suspend () -> Unit = {},
+    private val onAuthenticatedSuccess: suspend () -> Unit = {},
+    private val responseCache: DomainResponseCache = NoOpDomainResponseCache,
+    private val cacheScopeProvider: () -> String? = { null },
     private val now: () -> Instant = Instant::now,
     private val uuid: () -> UUID = UUID::randomUUID,
+    private val retryDelay: suspend (Long) -> Unit = { delay(it) },
     private val connectionFactory: (URL) -> HttpURLConnection = { url ->
         url.openConnection() as HttpURLConnection
     }
 ) : HydroDomainApi {
+    private val mutableDataStatus = MutableStateFlow(DomainDataStatus())
+    override val dataStatus: StateFlow<DomainDataStatus> = mutableDataStatus
 
     override suspend fun sensors(): List<ApiSensor> =
         list("catalogs/sensors") { value ->
@@ -92,7 +102,7 @@ class HttpHydroDomainApi(
 
     override suspend fun activeCycle(): ApiCycle? {
         val context = contextProvider()
-        return activeCycle(context)
+        return activeCycle(context, allowCache = true)
     }
 
     override suspend fun changeActiveCrop(
@@ -103,7 +113,7 @@ class HttpHydroDomainApi(
         if (plannedDurationDays != null && plannedDurationDays < 1) throw invalidResponse()
 
         val context = contextProvider()
-        val current = activeCycle(context)
+        val current = activeCycle(context, allowCache = false)
         if (current?.cropKey == cropKey) return current
 
         val transitionAt = now().toString()
@@ -117,10 +127,11 @@ class HttpHydroDomainApi(
                     put("is_active", false)
                 }
             ).requireDataObject().toCycle()
+            invalidateCachedReads(setOf("cycles?"))
         }
 
         val cycleUuid = uuid().toString()
-        return requestIdempotent(
+        val created = requestIdempotent(
             context = context,
             method = "POST",
             path = "cycles",
@@ -134,6 +145,8 @@ class HttpHydroDomainApi(
             },
             idempotencyKey = cycleUuid
         ).requireDataObject().toCycle()
+        invalidateCachedReads(setOf("cycles?", "telemetry/measurements"))
+        return created
     }
 
     override suspend fun measurements(
@@ -190,8 +203,9 @@ class HttpHydroDomainApi(
     ): ApiCommand {
         if (actuatorKey !in HydroApiContract.actuatorKeys) throw invalidResponse()
         val commandUuid = uuid().toString()
-        return requestIdempotent(
-            context = contextProvider(),
+        val context = contextProvider()
+        val created = requestIdempotent(
+            context = context,
             method = "POST",
             path = "commands",
             body = JSONObject().apply {
@@ -203,6 +217,8 @@ class HttpHydroDomainApi(
             },
             idempotencyKey = commandUuid
         ).requireDataObject().toCommand()
+        invalidateCachedReads(setOf("commands", "catalogs/actuators"))
+        return created
     }
 
     override suspend fun dosingRequest(requestUuid: String): ApiDosingRequest =
@@ -222,8 +238,9 @@ class HttpHydroDomainApi(
             throw invalidResponse()
         }
         val requestUuid = uuid().toString()
-        return requestIdempotent(
-            context = contextProvider(),
+        val context = contextProvider()
+        val created = requestIdempotent(
+            context = context,
             method = "POST",
             path = "dosing-requests",
             body = JSONObject().apply {
@@ -234,6 +251,8 @@ class HttpHydroDomainApi(
             },
             idempotencyKey = requestUuid
         ).requireDataObject().toDosingRequest()
+        invalidateCachedReads(setOf("dosing-requests", "commands", "catalogs/actuators"))
+        return created
     }
 
     private suspend fun <T> list(path: String, transform: (JSONObject) -> T): List<T> {
@@ -241,8 +260,16 @@ class HttpHydroDomainApi(
         return envelope.requireDataArray().objects().map(transform)
     }
 
-    private suspend fun activeCycle(context: DomainApiContext): ApiCycle? {
-        val envelope = request(context, "GET", "cycles?active=true&limit=2")
+    private suspend fun activeCycle(
+        context: DomainApiContext,
+        allowCache: Boolean
+    ): ApiCycle? {
+        val envelope = request(
+            context,
+            "GET",
+            "cycles?active=true&limit=2",
+            allowCache = allowCache
+        )
         val cycles = envelope.requireDataArray().objects().map { it.toCycle() }
         if (cycles.size > 1) throw invalidResponse()
         return cycles.singleOrNull()
@@ -260,6 +287,7 @@ class HttpHydroDomainApi(
                 return request(context, method, path, body, idempotencyKey)
             } catch (error: DomainApiException) {
                 if (!error.problem.transient || attempt == 1) throw error
+                retryDelay(MUTATION_RETRY_DELAY_MILLIS)
             }
         }
         throw invalidResponse()
@@ -270,9 +298,59 @@ class HttpHydroDomainApi(
         method: String,
         path: String,
         body: JSONObject? = null,
-        idempotencyKey: String? = null
-    ): JSONObject = withContext(Dispatchers.IO) {
+        idempotencyKey: String? = null,
+        allowCache: Boolean = method == "GET"
+    ): JSONObject {
         validateContext(context)
+        val attempts = if (method == "GET") READ_ATTEMPTS else 1
+        var lastTransient: DomainApiException? = null
+
+        repeat(attempts) { attempt ->
+            try {
+                val raw = executeNetworkRequest(context, method, path, body, idempotencyKey)
+                val envelope = parseEnvelope(raw)
+                markAuthenticatedSuccess()
+                mutableDataStatus.value = DomainDataStatus(
+                    source = DomainDataSource.LIVE,
+                    observedAt = now()
+                )
+                if (method == "GET" && allowCache) cacheResponse(path, raw)
+                return envelope
+            } catch (cancelled: CancellationException) {
+                throw cancelled
+            } catch (error: DomainApiException) {
+                if (!error.problem.transient) {
+                    mutableDataStatus.value = DomainDataStatus(
+                        source = DomainDataSource.UNAVAILABLE,
+                        observedAt = now(),
+                        problemCode = error.problem.code
+                    )
+                    throw error
+                }
+                lastTransient = error
+                if (attempt + 1 < attempts) retryDelay(READ_RETRY_DELAY_MILLIS)
+            }
+        }
+
+        val failure = lastTransient ?: invalidResponse()
+        if (method == "GET" && allowCache) {
+            cachedEnvelope(path, failure.problem.code)?.let { return it }
+        }
+        mutableDataStatus.value = DomainDataStatus(
+            source = DomainDataSource.UNAVAILABLE,
+            observedAt = now(),
+            problemCode = failure.problem.code
+        )
+        throw failure
+    }
+
+    private suspend fun executeNetworkRequest(
+        context: DomainApiContext,
+        method: String,
+        path: String,
+        body: JSONObject?,
+        idempotencyKey: String?
+    ): String = withContext(Dispatchers.IO) {
         val connection = try {
             connectionFactory(URL("${baseUrl.trimEnd('/')}/sites/${context.siteKey}/${path.trimStart('/')}"))
         } catch (cancelled: CancellationException) {
@@ -306,7 +384,7 @@ class HttpHydroDomainApi(
                 if (status == 401) invalidateSessionBestEffort()
                 throw problem(status, text)
             }
-            parseEnvelope(text)
+            text
         } catch (cancelled: CancellationException) {
             throw cancelled
         } catch (known: DomainApiException) {
@@ -315,6 +393,93 @@ class HttpHydroDomainApi(
             throw networkFailure(error)
         } finally {
             connection.disconnect()
+        }
+    }
+
+    private suspend fun cacheResponse(path: String, raw: String) {
+        val scope = cacheScopeProvider()?.takeIf(String::isNotBlank) ?: return
+        try {
+            responseCache.write(scope, path, CachedDomainResponse(raw, now()))
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // A cache write must never turn a valid API response into an error.
+        }
+    }
+
+    private suspend fun cachedEnvelope(path: String, problemCode: String): JSONObject? {
+        val scope = cacheScopeProvider()?.takeIf(String::isNotBlank) ?: return null
+        val cached = try {
+            responseCache.read(scope, path)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            null
+        } ?: return null
+
+        val observedAt = now()
+        if (cached.storedAt.isAfter(observedAt.plus(FUTURE_CACHE_TOLERANCE))) {
+            removeCachedResponse(scope, path)
+            return null
+        }
+        val age = if (cached.storedAt.isAfter(observedAt)) {
+            Duration.ZERO
+        } else {
+            Duration.between(cached.storedAt, observedAt)
+        }
+        val policy = DomainCachePolicies.forPath(path)
+        if (age > policy.maximumOfflineAge) {
+            removeCachedResponse(scope, path)
+            return null
+        }
+
+        val envelope = try {
+            parseEnvelope(cached.body)
+        } catch (_: DomainApiException) {
+            removeCachedResponse(scope, path)
+            return null
+        }
+        mutableDataStatus.value = DomainDataStatus(
+            source = if (age <= policy.freshFor) {
+                DomainDataSource.CACHE_FRESH
+            } else {
+                DomainDataSource.CACHE_STALE
+            },
+            observedAt = observedAt,
+            cacheStoredAt = cached.storedAt,
+            problemCode = problemCode
+        )
+        return envelope
+    }
+
+    private suspend fun removeCachedResponse(scope: String, path: String) {
+        try {
+            responseCache.remove(scope, path)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Corrupt/expired cache is already treated as unavailable.
+        }
+    }
+
+    private suspend fun invalidateCachedReads(prefixes: Set<String>) {
+        val scope = cacheScopeProvider()?.takeIf(String::isNotBlank) ?: return
+        try {
+            responseCache.removeByPrefix(scope, prefixes)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // A failed invalidation cannot rewrite or queue the accepted mutation.
+        }
+    }
+
+    private suspend fun markAuthenticatedSuccess() {
+        try {
+            onAuthenticatedSuccess()
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (_: Exception) {
+            // Session metadata is advisory after the server accepted this request.
         }
     }
 
@@ -537,8 +702,12 @@ class HttpHydroDomainApi(
         private const val API_VERSION = "1"
         private const val CONNECT_TIMEOUT_MILLIS = 10_000
         private const val READ_TIMEOUT_MILLIS = 15_000
+        private const val READ_ATTEMPTS = 2
+        private const val READ_RETRY_DELAY_MILLIS = 250L
+        private const val MUTATION_RETRY_DELAY_MILLIS = 250L
         private const val INTENT_TTL_SECONDS = 5L * 60L
         private const val MAX_DOSING_ML = 9_999_999.999
+        private val FUTURE_CACHE_TOLERANCE = Duration.ofMinutes(5)
         // Keep this aligned with API v1's LogicalKey schema in openapi.json.
         private val LOGICAL_KEY = Regex("^[a-z0-9][a-z0-9_-]{0,63}$")
     }

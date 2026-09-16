@@ -1,5 +1,6 @@
 package com.hydrobox.app.api
 
+import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.runBlocking
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertFalse
@@ -336,6 +337,149 @@ class HttpHydroDomainApiTest {
     }
 
     @Test
+    fun validatedGetFallsBackToScopedCacheAfterCancelableRetry() = runBlocking {
+        val cache = FakeResponseCache()
+        val liveResponses = ArrayDeque(listOf(
+            StubResponse(200, envelope("""[{"sensor_key":"ph","name":"pH","unit_symbol":"pH","description":null,"display_order":1,"is_active":true}]"""))
+        ))
+        val live = api(liveResponses, mutableListOf(), responseCache = cache)
+        assertEquals("ph", live.sensors().single().sensorKey)
+
+        val retryDelays = mutableListOf<Long>()
+        val offlineResponses = ArrayDeque(listOf(
+            StubResponse(0, "", IOException("offline-1")),
+            StubResponse(0, "", IOException("offline-2"))
+        ))
+        val offline = api(
+            offlineResponses,
+            mutableListOf(),
+            responseCache = cache,
+            retryDelay = { retryDelays += it }
+        )
+
+        assertEquals("ph", offline.sensors().single().sensorKey)
+        assertEquals(listOf(250L), retryDelays)
+        assertEquals(DomainDataSource.CACHE_FRESH, offline.dataStatus.value.source)
+        assertEquals(Instant.parse("2026-09-15T12:00:00Z"), offline.dataStatus.value.cacheStoredAt)
+    }
+
+    @Test
+    fun staleOrExpiredCacheIsExplicitAndNeverMasksUnauthorized() = runBlocking {
+        val cache = FakeResponseCache()
+        cache.write(
+            CACHE_SCOPE,
+            "catalogs/sensors",
+            CachedDomainResponse(
+                envelope("""[{"sensor_key":"ph","name":"pH","unit_symbol":"pH","description":null,"display_order":1,"is_active":true}]"""),
+                Instant.parse("2026-09-13T12:00:00Z")
+            )
+        )
+        val offline = api(
+            ArrayDeque(listOf(
+                StubResponse(0, "", IOException("offline-1")),
+                StubResponse(0, "", IOException("offline-2"))
+            )),
+            mutableListOf(),
+            now = { Instant.parse("2026-09-15T12:00:00Z") },
+            responseCache = cache
+        )
+        assertEquals("ph", offline.sensors().single().sensorKey)
+        assertEquals(DomainDataSource.CACHE_STALE, offline.dataStatus.value.source)
+
+        val unauthorized = api(
+            ArrayDeque(listOf(StubResponse(401, problem(401, "auth.token_revoked")))),
+            mutableListOf(),
+            responseCache = cache
+        )
+        assertEquals("auth.token_revoked", expectDomainError { unauthorized.sensors() }.problem.code)
+        assertEquals(DomainDataSource.UNAVAILABLE, unauthorized.dataStatus.value.source)
+
+        val expired = api(
+            ArrayDeque(listOf(
+                StubResponse(0, "", IOException("offline-1")),
+                StubResponse(0, "", IOException("offline-2"))
+            )),
+            mutableListOf(),
+            now = { Instant.parse("2026-09-23T12:00:01Z") },
+            responseCache = cache
+        )
+        assertEquals("network.unavailable", expectDomainError { expired.sensors() }.problem.code)
+        assertNull(cache.read(CACHE_SCOPE, "catalogs/sensors"))
+    }
+
+    @Test
+    fun physicalIntentNeverFallsBackToCachedGet() = runBlocking {
+        val cache = FakeResponseCache()
+        cache.write(
+            CACHE_SCOPE,
+            "commands?limit=100",
+            CachedDomainResponse(pageEnvelope("[]", false, null), Instant.parse("2026-09-15T12:00:00Z"))
+        )
+        val api = api(
+            ArrayDeque(listOf(
+                StubResponse(0, "", IOException("offline-1")),
+                StubResponse(0, "", IOException("offline-2"))
+            )),
+            mutableListOf(),
+            uuid = { UUID.fromString("99999999-9999-4999-8999-999999999999") },
+            responseCache = cache
+        )
+
+        assertEquals(
+            "network.unavailable",
+            expectDomainError { api.createSetStateCommand("fan", true) }.problem.code
+        )
+    }
+
+    @Test
+    fun acceptedPhysicalIntentInvalidatesRelatedReads() = runBlocking {
+        val cache = FakeResponseCache()
+        cache.write(
+            CACHE_SCOPE,
+            "commands?limit=100",
+            CachedDomainResponse(pageEnvelope("[]", false, null), Instant.parse("2026-09-15T12:00:00Z"))
+        )
+        cache.write(
+            CACHE_SCOPE,
+            "catalogs/actuators",
+            CachedDomainResponse(envelope("[]"), Instant.parse("2026-09-15T12:00:00Z"))
+        )
+        val commandUuid = UUID.fromString("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        val api = api(
+            ArrayDeque(listOf(
+                StubResponse(202, envelope(commandJson(commandUuid.toString(), "pending", null, null)))
+            )),
+            mutableListOf(),
+            uuid = { commandUuid },
+            responseCache = cache
+        )
+
+        assertEquals("pending", api.createSetStateCommand("fan", true).statusKey)
+        assertNull(cache.read(CACHE_SCOPE, "commands?limit=100"))
+        assertNull(cache.read(CACHE_SCOPE, "catalogs/actuators"))
+    }
+
+    @Test
+    fun cancellationDuringReadBackoffStopsBeforeCacheFallback() = runBlocking {
+        val cache = FakeResponseCache()
+        cache.write(
+            CACHE_SCOPE,
+            "catalogs/sensors",
+            CachedDomainResponse(envelope("[]"), Instant.parse("2026-09-15T12:00:00Z"))
+        )
+        val api = api(
+            ArrayDeque(listOf(StubResponse(0, "", IOException("offline")))),
+            mutableListOf(),
+            responseCache = cache,
+            retryDelay = { throw CancellationException("screen left") }
+        )
+
+        val error = runCatching { api.sensors() }.exceptionOrNull()
+        assertTrue(error is CancellationException)
+        assertEquals(DomainDataSource.IDLE, api.dataStatus.value.source)
+    }
+
+    @Test
     fun contextResolverFailsClosedForMissingOrAmbiguousSites() {
         val missing = runCatching { DomainApiContextResolver.resolve("token", emptyList()) }.exceptionOrNull()
         val ambiguous = runCatching {
@@ -352,13 +496,18 @@ class HttpHydroDomainApiTest {
         connections: MutableList<StubHttpURLConnection>,
         now: () -> Instant = { Instant.parse("2026-09-15T12:00:00Z") },
         uuid: () -> UUID = { UUID.randomUUID() },
-        onUnauthorized: suspend () -> Unit = {}
+        onUnauthorized: suspend () -> Unit = {},
+        responseCache: DomainResponseCache = NoOpDomainResponseCache,
+        retryDelay: suspend (Long) -> Unit = {}
     ) = HttpHydroDomainApi(
         baseUrl = BASE_URL,
         contextProvider = { context },
         onUnauthorized = onUnauthorized,
+        responseCache = responseCache,
+        cacheScopeProvider = { CACHE_SCOPE },
         now = now,
         uuid = uuid,
+        retryDelay = retryDelay,
         connectionFactory = { url ->
             val response = responses.removeFirst()
             StubHttpURLConnection(
@@ -414,6 +563,31 @@ class HttpHydroDomainApiTest {
         val responseFailure: IOException? = null
     )
 
+    private class FakeResponseCache : DomainResponseCache {
+        private val values = mutableMapOf<Pair<String, String>, CachedDomainResponse>()
+
+        override suspend fun read(scope: String, key: String): CachedDomainResponse? =
+            values[scope to key]
+
+        override suspend fun write(scope: String, key: String, response: CachedDomainResponse) {
+            values[scope to key] = response
+        }
+
+        override suspend fun remove(scope: String, key: String) {
+            values.remove(scope to key)
+        }
+
+        override suspend fun removeByPrefix(scope: String, prefixes: Set<String>) {
+            values.keys.removeAll { (entryScope, key) ->
+                entryScope == scope && prefixes.any { prefix -> key.startsWith(prefix) }
+            }
+        }
+
+        override suspend fun clearScope(scope: String) {
+            values.keys.removeAll { it.first == scope }
+        }
+    }
+
     private class StubHttpURLConnection(
         url: URL,
         private val status: Int,
@@ -446,6 +620,7 @@ class HttpHydroDomainApiTest {
 
     companion object {
         private const val BASE_URL = "https://api.example.test/api/v1"
+        private const val CACHE_SCOPE = "7:university-lab"
         private const val REQUEST_ID = "99999999-9999-4999-8999-999999999999"
     }
 }

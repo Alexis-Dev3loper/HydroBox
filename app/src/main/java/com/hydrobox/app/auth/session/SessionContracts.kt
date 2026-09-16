@@ -19,7 +19,10 @@ data class HumanPrincipal(
 data class StoredSession(
     val localUserId: Long,
     val persistent: Boolean,
-    val tokens: TokenPair
+    val tokens: TokenPair,
+    val principalUuid: String? = null,
+    val siteKeys: List<String> = emptyList(),
+    val scopes: Set<String> = emptySet()
 )
 
 interface HumanAuthApi {

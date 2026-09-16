@@ -6,6 +6,7 @@ import android.security.keystore.KeyProperties
 import android.util.Base64
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.withContext
+import org.json.JSONArray
 import org.json.JSONObject
 import java.security.KeyStore
 import javax.crypto.Cipher
@@ -85,6 +86,9 @@ class AndroidKeystoreSessionVault(context: Context) : SessionVault {
         put("access_expires_at", session.tokens.accessExpiresAtEpochMillis)
         put("refresh_token", session.tokens.refreshToken)
         put("refresh_expires_at", session.tokens.refreshExpiresAtEpochMillis)
+        put("principal_uuid", session.principalUuid ?: JSONObject.NULL)
+        put("site_keys", JSONArray(session.siteKeys))
+        put("scopes", JSONArray(session.scopes.toList()))
     }.toString().toByteArray(Charsets.UTF_8)
 
     private fun decode(bytes: ByteArray): StoredSession {
@@ -98,8 +102,22 @@ class AndroidKeystoreSessionVault(context: Context) : SessionVault {
                 accessExpiresAtEpochMillis = json.getLong("access_expires_at"),
                 refreshToken = json.getString("refresh_token"),
                 refreshExpiresAtEpochMillis = json.getLong("refresh_expires_at")
-            )
+            ),
+            principalUuid = if (json.isNull("principal_uuid")) {
+                null
+            } else {
+                json.optString("principal_uuid").takeIf(String::isNotBlank)
+            },
+            siteKeys = json.optJSONArray("site_keys").strings(),
+            scopes = json.optJSONArray("scopes").strings().toSet()
         )
+    }
+
+    private fun JSONArray?.strings(): List<String> = buildList {
+        val values = this@strings ?: return@buildList
+        repeat(values.length()) { index ->
+            values.optString(index).takeIf(String::isNotBlank)?.let(::add)
+        }
     }
 
     companion object {

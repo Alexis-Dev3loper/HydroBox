@@ -1,5 +1,7 @@
 package com.hydrobox.app.api
 
+import kotlinx.coroutines.flow.MutableStateFlow
+import kotlinx.coroutines.flow.StateFlow
 import java.time.Instant
 
 data class DomainApiContext(
@@ -151,7 +153,29 @@ data class ApiPage<T>(
     val nextCursor: String?
 )
 
+enum class DomainDataSource {
+    IDLE,
+    LIVE,
+    CACHE_FRESH,
+    CACHE_STALE,
+    UNAVAILABLE
+}
+
+data class DomainDataStatus(
+    val source: DomainDataSource = DomainDataSource.IDLE,
+    val observedAt: Instant? = null,
+    val cacheStoredAt: Instant? = null,
+    val problemCode: String? = null
+)
+
+private object DefaultDomainDataStatus {
+    val state = MutableStateFlow(DomainDataStatus())
+}
+
 interface HydroDomainApi {
+    val dataStatus: StateFlow<DomainDataStatus>
+        get() = DefaultDomainDataStatus.state
+
     suspend fun sensors(): List<ApiSensor>
     suspend fun actuators(): List<ApiActuator>
     suspend fun nutrients(): List<ApiNutrient>

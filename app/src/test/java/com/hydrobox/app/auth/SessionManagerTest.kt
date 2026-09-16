@@ -46,6 +46,9 @@ class SessionManagerTest {
         assertEquals(42L, vault.value?.localUserId)
         assertTrue(vault.value?.persistent == true)
         assertEquals(api.issued, vault.value?.tokens)
+        assertEquals(principal.principalUuid, vault.value?.principalUuid)
+        assertEquals(listOf("university-lab"), vault.value?.siteKeys)
+        assertEquals(setOf("profile:read"), vault.value?.scopes)
         assertEquals(42L, manager.state.value.userId)
         assertTrue(manager.state.value.isLoggedIn)
         assertEquals(listOf("university-lab"), manager.state.value.siteKeys)
@@ -150,6 +153,33 @@ class SessionManagerTest {
         assertFalse(manager.restore { 7L })
         assertEquals(stored, vault.value)
         assertFalse(manager.state.value.isLoggedIn)
+    }
+
+    @Test
+    fun persistentSessionWithCachedIdentityRestoresReadOnlyWhileOffline() = runBlocking {
+        val api = FakeAuthApi(now, principal).apply {
+            refreshFailure = IOException("offline")
+        }
+        val expiredAccess = api.issued.copy(accessExpiresAtEpochMillis = now - 1)
+        val stored = StoredSession(
+            localUserId = 7L,
+            persistent = true,
+            tokens = expiredAccess,
+            principalUuid = principal.principalUuid,
+            siteKeys = principal.siteKeys,
+            scopes = principal.scopes.toSet()
+        )
+        val vault = FakeVault(stored)
+        val manager = SessionManager(api, vault) { now }
+
+        assertTrue(manager.restore { 7L })
+        assertTrue(manager.state.value.isLoggedIn)
+        assertTrue(manager.state.value.offlineMode)
+        assertEquals("7:university-lab", manager.cacheScopeKey())
+        assertEquals(expiredAccess.accessToken, manager.accessTokenForDomain())
+
+        manager.markDomainSessionVerified()
+        assertFalse(manager.state.value.offlineMode)
     }
 
     @Test

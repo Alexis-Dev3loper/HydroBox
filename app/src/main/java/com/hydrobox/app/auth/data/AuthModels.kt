@@ -20,5 +20,6 @@ data class AuthState(
     val isLoggedIn: Boolean = false,
     val userId: Long? = null,
     val siteKeys: List<String> = emptyList(),
-    val scopes: Set<String> = emptySet()
+    val scopes: Set<String> = emptySet(),
+    val offlineMode: Boolean = false
 )

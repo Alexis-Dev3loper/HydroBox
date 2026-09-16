@@ -15,6 +15,7 @@ import com.hydrobox.app.auth.session.SessionManager
 import com.hydrobox.app.api.DomainApiContextResolver
 import com.hydrobox.app.api.HttpHydroDomainApi
 import com.hydrobox.app.api.HydroDomainApi
+import com.hydrobox.app.api.JsonFileDomainResponseCache
 import com.hydrobox.app.config.HydroBoxEnvironment
 import java.io.File
 import java.io.FileOutputStream
@@ -31,14 +32,23 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         sessions = sessions,
         deviceName = "HydroBox Android ${Build.MODEL}".take(100)
     )
+    private val domainResponseCache = JsonFileDomainResponseCache(
+        File(app.noBackupFilesDir, "mobile-domain-cache-v1.json")
+    )
 
     val domainApi: HydroDomainApi = HttpHydroDomainApi(
         baseUrl = HydroBoxEnvironment.current.api.baseUrl,
         contextProvider = {
-            val accessToken = sessions.accessToken()
+            val accessToken = sessions.accessTokenForDomain()
             DomainApiContextResolver.resolve(accessToken, sessions.state.value.siteKeys)
         },
-        onUnauthorized = sessions::invalidate
+        onUnauthorized = {
+            sessions.cacheScopeKey()?.let { scope -> domainResponseCache.clearScope(scope) }
+            sessions.invalidate()
+        },
+        onAuthenticatedSuccess = sessions::markDomainSessionVerified,
+        responseCache = domainResponseCache,
+        cacheScopeProvider = sessions::cacheScopeKey
     )
 
     val authState = repo.authState
@@ -127,5 +137,10 @@ class AuthViewModel(app: Application) : AndroidViewModel(app) {
         }
     }
 
-    fun logout() { viewModelScope.launch { repo.logout() } }
+    fun logout() {
+        viewModelScope.launch {
+            sessions.cacheScopeKey()?.let { scope -> domainResponseCache.clearScope(scope) }
+            repo.logout()
+        }
+    }
 }
