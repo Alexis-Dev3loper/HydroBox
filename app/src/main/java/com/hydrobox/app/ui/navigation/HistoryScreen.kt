@@ -4,6 +4,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.geometry.CornerRadius
 import com.hydrobox.app.api.ApiMeasurement
+import com.hydrobox.app.api.ApiSensor
+import com.hydrobox.app.api.ApiSensorRange
 import com.hydrobox.app.api.HydroDomainApi
 import java.time.Duration
 import java.time.Instant
@@ -42,9 +44,12 @@ import com.hydrobox.app.ui.components.SegmentedChip
 import com.hydrobox.app.ui.components.SegmentedVariant
 import com.hydrobox.app.ui.theme.BrandPrimary
 import com.hydrobox.app.ui.theme.Error
+import com.hydrobox.app.ui.model.formatLocalTimestamp
+import com.hydrobox.app.ui.model.formatSensorReading
+import com.hydrobox.app.ui.model.readingSubtitle
+import com.hydrobox.app.ui.model.telemetrySeries
 import kotlin.math.max
 import kotlin.math.min
-import kotlin.math.roundToInt
 import androidx.compose.foundation.layout.FlowRow
 import androidx.compose.foundation.layout.ExperimentalLayoutApi
 
@@ -57,9 +62,18 @@ fun HistoryScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var records by remember { mutableStateOf<List<ApiMeasurement>>(emptyList()) }
+    var sensorsByKey by remember { mutableStateOf<Map<String, ApiSensor>>(emptyMap()) }
+    var rangesByKey by remember { mutableStateOf<Map<String, ApiSensorRange>>(emptyMap()) }
 
     LaunchedEffect(api) {
         try {
+            sensorsByKey = api.sensors()
+                .filter(ApiSensor::active)
+                .associateBy(ApiSensor::sensorKey)
+            val activeCycle = api.activeCycle()
+            rangesByKey = activeCycle?.cropKey
+                ?.let { api.sensorRanges(it).associateBy(ApiSensorRange::sensorKey) }
+                .orEmpty()
             records = api.measurements(limit = 100).items
         } catch (e: Exception) {
             error = "No se pudieron cargar las mediciones"
@@ -68,10 +82,29 @@ fun HistoryScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
         }
     }
 
-    val optimum by remember(metric) { mutableStateOf(optimumRange(metric)) }
-    val series by remember(records, range, metric) {
-        mutableStateOf(buildSeriesFromApi(records, metric, range))
+    val availableMetrics = remember(sensorsByKey) {
+        Metric.entries.filter { it.sensorKey in sensorsByKey }
     }
+    LaunchedEffect(availableMetrics) {
+        if (availableMetrics.isNotEmpty() && metric !in availableMetrics) {
+            metric = availableMetrics.first()
+        }
+    }
+    val sensor = sensorsByKey[metric.sensorKey]
+    val optimum = rangesByKey[metric.sensorKey]
+        ?.let { it.minValue.toFloat()..it.maxValue.toFloat() }
+    val points by remember(records, range, metric, sensor) {
+        mutableStateOf(
+            if (sensor == null) emptyList()
+            else telemetrySeries(
+                records = records,
+                sensorKey = metric.sensorKey,
+                capturedFrom = range.duration?.let { Instant.now().minus(it) }
+            )
+        )
+    }
+    val series = points.map { it.value.toFloat() }
+    val metricLabel = sensor?.name ?: metric.fallbackLabel
 
     Column(
         Modifier
@@ -123,34 +156,46 @@ fun HistoryScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
         }
 
         SectionTitle("Métrica")
-        FlowRow(
-            maxItemsInEachRow = 3,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
-            verticalArrangement = Arrangement.spacedBy(8.dp)
-        ) {
-            Metric.entries.forEach { m ->
-                SegmentedChip(
-                    text = m.label,
-                    selected = m == metric,
-                    onClick = { metric = m },
-                    variant = SegmentedVariant.Tonal
-                )
+        if (availableMetrics.isEmpty() && !loading) {
+            Text(
+                "No hay sensores activos en el catálogo.",
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+        } else {
+            FlowRow(
+                maxItemsInEachRow = 3,
+                horizontalArrangement = Arrangement.spacedBy(8.dp),
+                verticalArrangement = Arrangement.spacedBy(8.dp)
+            ) {
+                availableMetrics.forEach { m ->
+                    SegmentedChip(
+                        text = sensorsByKey[m.sensorKey]?.name ?: m.fallbackLabel,
+                        selected = m == metric,
+                        onClick = { metric = m },
+                        variant = SegmentedVariant.Tonal
+                    )
+                }
             }
         }
 
         HydroCard(
             title = "Tendencia",
-            subtitle = "${metric.label} — ${range.label}",
+            subtitle = "$metricLabel — ${range.label}",
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(12.dp)) {
 
                 val currentMetric = metric
-                val yAxisLabel = currentMetric.label
+                val yAxisLabel = sensor?.let { "${it.name} (${it.unitSymbol})" }
+                    ?: currentMetric.fallbackLabel
 
-                val xLabels = remember(range, series) {
-                    // Por ahora solo índices; cuando tengamos fecha/hora real se cambia aquí
-                    List(series.size) { i -> i.toString() }
+                val xLabels = remember(range, points) {
+                    points.map {
+                        formatLocalTimestamp(
+                            instant = it.capturedAt,
+                            includeDate = range != TimeRange.Today
+                        )
+                    }
                 }
 
                 if (series.isEmpty()) {
@@ -173,7 +218,17 @@ fun HistoryScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
                 }
 
                 if (series.isNotEmpty()) {
-                    StatsRow(series = series, metric = metric)
+                    StatsRow(series = series, sensor = sensor!!)
+                    val latest = records
+                        .filter { it.readings.containsKey(metric.sensorKey) }
+                        .maxByOrNull(ApiMeasurement::capturedAt)
+                    latest?.let {
+                        Text(
+                            readingSubtitle(it, metric.sensorKey),
+                            style = MaterialTheme.typography.bodySmall,
+                            color = MaterialTheme.colorScheme.onSurfaceVariant
+                        )
+                    }
                 }
             }
         }
@@ -226,15 +281,15 @@ private fun SectionTitle(text: String) {
 }
 
 @Composable
-private fun StatsRow(series: List<Float>, metric: Metric) {
+private fun StatsRow(series: List<Float>, sensor: ApiSensor) {
     val minV = series.minOrNull() ?: 0f
     val maxV = series.maxOrNull() ?: 0f
     val avgV = if (series.isNotEmpty()) series.average().toFloat() else 0f
 
     Row(horizontalArrangement = Arrangement.spacedBy(10.dp)) {
-        StatPill("Mín", formatValue(metric, minV))
-        StatPill("Prom", formatValue(metric, avgV))
-        StatPill("Máx", formatValue(metric, maxV))
+        StatPill("Mín", formatSensorReading(sensor, minV.toDouble()))
+        StatPill("Prom", formatSensorReading(sensor, avgV.toDouble()))
+        StatPill("Máx", formatSensorReading(sensor, maxV.toDouble()))
     }
 }
 
@@ -452,59 +507,17 @@ private fun TrendChart(
 
 /* ===================== Datos/formatos ===================== */
 
-private fun optimumRange(metric: Metric): ClosedFloatingPointRange<Float>? =
-    when (metric) {
-        Metric.PH        -> 5.8f..6.2f
-        Metric.ORP       -> 650f..750f
-        Metric.WaterTemp -> 20f..23f
-        Metric.AirTemp   -> 22f..25f
-        Metric.Humidity  -> 50f..70f
-        Metric.Level     -> null
-    }
-
-private fun formatValue(metric: Metric, v: Float): String =
-    when (metric) {
-        Metric.PH        -> String.format(Locale.US, "%.1f", v)
-        Metric.ORP       -> "${v.roundToInt()} mV"
-        Metric.WaterTemp -> "${v.roundToInt()}°"
-        Metric.AirTemp   -> "${v.roundToInt()}°"
-        Metric.Humidity  -> "${v.roundToInt()} %"
-        Metric.Level     -> "${v.roundToInt()} %"
-    }
-
-/**
- * Construye la serie cronológica a partir de telemetría canónica. Los valores
- * ausentes permanecen ausentes y un cero real se conserva como lectura válida.
- */
-private fun buildSeriesFromApi(
-    records: List<ApiMeasurement>,
-    metric: Metric,
-    range: TimeRange,
-    now: Instant = Instant.now()
-): List<Float> {
-    val cutoff = when (range) {
-        TimeRange.Today -> now.minus(Duration.ofDays(1))
-        TimeRange.Last7d -> now.minus(Duration.ofDays(7))
-        TimeRange.Last30d -> now.minus(Duration.ofDays(30))
-        TimeRange.Last90d -> now.minus(Duration.ofDays(90))
-        TimeRange.All -> null
-    }
-
-    val sensorKey = metric.sensorKey
-    return records.asSequence()
-        .filter { cutoff == null || !it.capturedAt.isBefore(cutoff) }
-        .sortedBy(ApiMeasurement::capturedAt)
-        .mapNotNull { it.readings[sensorKey]?.toFloat() }
-        .toList()
-}
-
 /* ===================== Enums ===================== */
 
-private enum class TimeRange(val label: String) {
-    Today("Hoy"), Last7d("7 días"), Last30d("30 días"), Last90d("90 días"), All("Todo")
+private enum class TimeRange(val label: String, val duration: Duration?) {
+    Today("Hoy", Duration.ofDays(1)),
+    Last7d("7 días", Duration.ofDays(7)),
+    Last30d("30 días", Duration.ofDays(30)),
+    Last90d("90 días", Duration.ofDays(90)),
+    All("Todo", null)
 }
 
-private enum class Metric(val label: String, val sensorKey: String) {
+private enum class Metric(val fallbackLabel: String, val sensorKey: String) {
     PH("pH", "ph"), ORP("ORP", "orp"), WaterTemp("Temp Agua", "water_temperature"),
     AirTemp("Temp Aire", "air_temperature"), Humidity("Humedad", "air_humidity"),
     Level("Nivel Agua", "water_level")

@@ -58,7 +58,7 @@ private data class CropSpec(
     val cropKey: String,
     val name: String,
     val imageRes: Int,
-    val totalDays: Int,
+    val totalDays: Int?,
     val ranges: List<ApiSensorRange>
 )
 
@@ -91,7 +91,7 @@ fun CropsScreen(
                         cropKey = crop.cropKey,
                         name = crop.name,
                         imageRes = local.imageRes,
-                        totalDays = crop.defaultCycleDays ?: local.fallbackCycleDays,
+                        totalDays = crop.defaultCycleDays,
                         ranges = api.sensorRanges(crop.cropKey)
                     )
                 }
@@ -297,7 +297,8 @@ fun CropsScreen(
     if (pendingIndex != null) {
         val pendingCrop = cropsCatalog[pendingIndex]
         val activeCrop = cropsCatalog.getOrNull(activeIndex)
-        val remaining = activeCrop?.let { (it.totalDays - activeDaysElapsed).coerceAtLeast(0) }
+        val remaining = activeCrop?.totalDays
+            ?.let { (it - activeDaysElapsed).coerceAtLeast(0) }
 
         AlertDialog(
             onDismissRequest = { confirmForIndex = null },
@@ -306,6 +307,9 @@ fun CropsScreen(
                 Text(
                     if (activeCrop == null) {
                         "Se iniciará un nuevo ciclo con ${pendingCrop.name}."
+                    } else if (remaining == null) {
+                        "Actualmente tienes ${activeCrop.name} sin una duración planificada. " +
+                                "Si cambias ahora, se dará por abandonado."
                     } else {
                         "Actualmente tienes ${activeCrop.name} con $remaining días pendientes para completar su ciclo. " +
                                 "Si cambias ahora, se dará por abandonado."
@@ -347,11 +351,10 @@ fun CropsScreen(
 private fun TimeEstimateInfoCard(
     isActive: Boolean,
     daysElapsed: Int,
-    totalDays: Int
+    totalDays: Int?
 ) {
-    val progress = if (isActive) {
-        (daysElapsed.coerceIn(0, totalDays).toFloat() /
-                totalDays.toFloat().coerceAtLeast(1f))
+    val progress = if (isActive && totalDays != null) {
+        daysElapsed.coerceIn(0, totalDays).toFloat() / totalDays.toFloat()
     } else 0f
 
     Card(
@@ -369,11 +372,18 @@ private fun TimeEstimateInfoCard(
                 style = MaterialTheme.typography.titleMedium,
                 fontWeight = FontWeight.SemiBold
             )
-            Text(
-                "Esta hortaliza toma un total de $totalDays días en cultivar.",
-                color = MaterialTheme.colorScheme.onSurfaceVariant
-            )
-            if (isActive) {
+            if (totalDays == null) {
+                Text(
+                    "No hay una duración configurada para este cultivo.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                Text(
+                    "Duración planificada: $totalDays días.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            }
+            if (isActive && totalDays != null) {
                 LinearProgressIndicator(
                     progress = { progress },
                     trackColor = MaterialTheme.colorScheme.surfaceVariant,

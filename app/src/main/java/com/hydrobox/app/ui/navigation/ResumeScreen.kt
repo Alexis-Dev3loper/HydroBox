@@ -29,8 +29,11 @@ import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
 import coil.compose.AsyncImage
 import com.hydrobox.app.api.ApiMeasurement
+import com.hydrobox.app.api.ApiSensor
 import com.hydrobox.app.api.HydroDomainApi
 import com.hydrobox.app.ui.model.Crop
+import com.hydrobox.app.ui.model.formatSensorReading
+import com.hydrobox.app.ui.model.readingSubtitle
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.launch
 import kotlin.math.absoluteValue
@@ -49,7 +52,7 @@ data class SensorCardData(
 fun ResumeScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
     var currentCrop by remember { mutableStateOf<Crop?>(null) }
     var currentCropName by remember { mutableStateOf<String?>(null) }
-    var totalDays by remember { mutableIntStateOf(0) }
+    var totalDays by remember { mutableStateOf<Int?>(null) }
     var startEpoch by remember { mutableStateOf<Long?>(null) }
     var cropLoading by remember { mutableStateOf(true) }
     var cropError by remember { mutableStateOf<String?>(null) }
@@ -72,8 +75,6 @@ fun ResumeScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
             currentCropName = catalogCrop?.name ?: crop?.fallbackDisplayName
             totalDays = cycle?.plannedDurationDays
                 ?: catalogCrop?.defaultCycleDays
-                ?: crop?.fallbackCycleDays
-                ?: 0
             startEpoch = cycle?.startedAt?.toEpochMilli()
             cropError = null
         } catch (_: Exception) {
@@ -85,11 +86,12 @@ fun ResumeScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
 
     val autoDay = remember(startEpoch, now, totalDays) {
         val start = startEpoch
-        if (start == null || totalDays <= 0) 1
+        val duration = totalDays
+        if (start == null || duration == null) 1
         else {
             val diffMillis = (now - start).coerceAtLeast(0L)
             val days = (diffMillis / 86_400_000L).toInt() + 1
-            days.coerceIn(1, if (totalDays <= 0) Int.MAX_VALUE else totalDays)
+            days.coerceIn(1, duration)
         }
     }
 
@@ -101,9 +103,18 @@ fun ResumeScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
 
     // --- sensores: último registro de la API cada 15s ---
     var latest by remember { mutableStateOf<ApiMeasurement?>(null) }
+    var sensorCatalog by remember { mutableStateOf<List<ApiSensor>>(emptyList()) }
     var sensorsError by remember { mutableStateOf<String?>(null) }
 
     LaunchedEffect(api) {
+        try {
+            sensorCatalog = api.sensors()
+                .filter(ApiSensor::active)
+                .sortedBy(ApiSensor::displayOrder)
+        } catch (_: Exception) {
+            sensorsError = "No se pudo cargar el catálogo de sensores."
+            return@LaunchedEffect
+        }
         while (true) {
             try {
                 latest = api.measurements(limit = 1).items.firstOrNull()
@@ -115,51 +126,20 @@ fun ResumeScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
         }
     }
 
-    val sensors = remember(latest) {
-        val m = latest
-        val fecha = m?.capturedAt?.toString() ?: "Sin datos"
-
-        fun fmt(value: Float?, suffix: String) =
-            if (value != null) String.format("%.1f %s", value, suffix) else "-- $suffix"
-
-        listOf(
+    val sensors = remember(latest, sensorCatalog, now) {
+        sensorCatalog.map { sensor ->
+            val measurement = latest
             SensorCardData(
-                title = "Temperatura del aire",
-                valueText = fmt(m?.readings?.get("air_temperature")?.toFloat(), "°C"),
-                subtitle = "Última lectura • $fecha",
-                icon = { Icon(Icons.Filled.DeviceThermostat, contentDescription = null) },
-            ),
-            SensorCardData(
-                title = "Humedad del aire",
-                valueText = fmt(m?.readings?.get("air_humidity")?.toFloat(), "%"),
-                subtitle = "Última lectura • $fecha",
-                icon = { Icon(Icons.Filled.Opacity, contentDescription = null) },
-            ),
-            SensorCardData(
-                title = "Temperatura del agua",
-                valueText = fmt(m?.readings?.get("water_temperature")?.toFloat(), "°C"),
-                subtitle = "Última lectura • $fecha",
-                icon = { Icon(Icons.Filled.Speed, contentDescription = null) }
-            ),
-            SensorCardData(
-                title = "pH del agua",
-                valueText = m?.readings?.get("ph")?.let { String.format("%.2f", it) } ?: "--",
-                subtitle = "Última lectura • $fecha",
-                icon = { Icon(Icons.Filled.InvertColors, contentDescription = null) }
-            ),
-            SensorCardData(
-                title = "ORP",
-                valueText = m?.readings?.get("orp")?.let { "${it.roundToInt()} mV" } ?: "-- mV",
-                subtitle = "Última lectura • $fecha",
-                icon = { Icon(Icons.Filled.Speed, contentDescription = null) }
-            ),
-            SensorCardData(
-                title = "Nivel del agua",
-                valueText = m?.readings?.get("water_level")?.let { "${it.roundToInt()} %" } ?: "-- %",
-                subtitle = "Última lectura • $fecha",
-                icon = { Icon(Icons.Filled.Opacity, contentDescription = null) }
+                title = sensor.name,
+                valueText = formatSensorReading(sensor, measurement?.readings?.get(sensor.sensorKey)),
+                subtitle = readingSubtitle(
+                    measurement = measurement,
+                    sensorKey = sensor.sensorKey,
+                    now = java.time.Instant.ofEpochMilli(now)
+                ),
+                icon = { Icon(sensorSummaryIcon(sensor.sensorKey), contentDescription = null) }
             )
-        )
+        }
     }
 
     Column(
@@ -174,7 +154,7 @@ fun ResumeScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
             Box(Modifier.fillMaxWidth(), contentAlignment = Alignment.Center) {
                 CircularProgressIndicator()
             }
-        } else if (crop == null || totalDays == 0) {
+        } else if (crop == null) {
             Text(
                 cropError ?: "No hay un ciclo de cultivo activo.",
                 color = if (cropError == null) MaterialTheme.colorScheme.onSurfaceVariant
@@ -183,11 +163,19 @@ fun ResumeScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
         } else {
             CropHeaderCard(crop = crop, displayName = currentCropName ?: crop.fallbackDisplayName)
 
-            GrowthCard(
-                currentDay = currentDay,
-                totalDays = totalDays,
-                onDayChanged = { currentDay = it.coerceIn(1, totalDays) }
-            )
+            val duration = totalDays
+            if (duration == null) {
+                Text(
+                    "Este cultivo no tiene una duración planificada.",
+                    color = MaterialTheme.colorScheme.onSurfaceVariant
+                )
+            } else {
+                GrowthCard(
+                    currentDay = currentDay,
+                    totalDays = duration,
+                    onDayChanged = { currentDay = it.coerceIn(1, duration) }
+                )
+            }
         }
 
         if (sensorsError != null) {
@@ -198,8 +186,19 @@ fun ResumeScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
             )
         }
 
-        SensorsCarousel(cards = sensors)
+        if (sensors.isEmpty()) {
+            if (sensorsError == null) Text("No hay sensores activos en el catálogo.")
+        } else {
+            SensorsCarousel(cards = sensors)
+        }
     }
+}
+
+private fun sensorSummaryIcon(sensorKey: String) = when (sensorKey) {
+    "air_temperature" -> Icons.Filled.DeviceThermostat
+    "air_humidity", "water_level" -> Icons.Filled.Opacity
+    "ph" -> Icons.Filled.InvertColors
+    else -> Icons.Filled.Speed
 }
 @OptIn(ExperimentalFoundationApi::class)
 @Composable
