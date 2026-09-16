@@ -1,0 +1,87 @@
+# MB-007 — Automation, alertas, health e historial
+
+Actualizado: **2026-09-16**.
+
+Estado: **DISEÑO FUNCIONAL COMPLETO / SLICE A IMPLEMENTADO LOCALMENTE / CI PENDIENTE**.
+
+## Evidencia del estado real
+
+- Mobile ya consume catálogos, telemetría, commands y dosing desde API v1.
+- `HistoryScreen` obtiene telemetría real, pero su bloque «Eventos» contiene
+  cuatro ejemplos hardcodeados que no deben presentarse como historial real.
+- `NotificationScreen` solo muestra «Sistema de Notificaciones (demo)».
+- Mobile todavía no tiene modelos, cliente ni pantalla de Automation.
+- Web implementa y prueba CRUD/versionado de `/automations` y lectura de
+  `/automation-executions`; creación usa idempotencia y toda mutación posterior
+  exige `If-Match` fuerte con la versión vigente.
+- OpenAPI declara `/api/v1/health`, `/alerts` y ACK de alertas, pero las rutas,
+  controllers, repositories y persistencia de alertas no existen actualmente.
+- Core no contiene un dominio durable de alertas. HD-014, HD-015 y HD-016 siguen
+  `PLANNED / PENDIENTE`.
+
+## Corte implementable sin inventar contratos
+
+### Slice A — Cliente Automation e historial — IMPLEMENTABLE
+
+- DTOs estrictos para reglas, acciones, schedules y ejecuciones.
+- Listado paginado/cacheable de reglas y ejecuciones.
+- Creación idempotente siempre deshabilitada, como exige el servidor.
+- Edición, habilitar/pausar y borrado con `If-Match` derivado de `version`.
+- Invalidación de cache posterior a mutaciones aceptadas.
+- Ningún estado `dispatched` se presenta como ACK físico.
+
+### Slice B — UX Automation reducida — IMPLEMENTABLE
+
+El usuario solo proporciona nombre, acción, objetivo y calendario necesarios.
+La aplicación genera internamente `rule_uuid`, idempotency key, timezone local y
+grace seguro (30 s para nutrientes; 300 s para las demás acciones). Crear no
+habilita la regla: habilitar es una acción separada y versionada.
+
+La pantalla debe distinguir loading, vacío, error, offline/cache, permisos y
+conflicto `412`; debe permitir lectura con `automation:read` y mutaciones solo
+con `automation:write` y sesión online verificada.
+
+### Slice C — Historial y health derivados de hechos reales — IMPLEMENTABLE
+
+- Retirar los eventos demo.
+- Mostrar ejecuciones Automation reales y command lifecycle real.
+- Mantener availability de actuadores y freshness de telemetría como señales
+  separadas; no convertirlas en un health agregado inexistente.
+- `/api/v1/health` representa liveness del proceso central, no health físico del
+  sitio, y no se usará como sustituto de Edge/Arduino health.
+
+### Slice D — Alertas y ACK — BLOQUEADO POR DEPENDENCIA
+
+No crear alertas a partir de rangos en el cliente ni persistir ACK locales.
+Hasta que HD-016 defina productores, dedupe, lifecycle, persistencia y rutas
+operativas, Notificaciones mostrará un estado explícito de funcionalidad no
+disponible y nunca fixtures/demo como datos reales.
+
+## Casos negativos obligatorios
+
+- UUID/key/status/action/schedule desconocidos fallan cerrado.
+- `If-Match` usa una versión positiva y un `412` exige recargar antes de reintentar.
+- Mutaciones no usan cache, no se encolan offline y requieren scope de escritura.
+- Respuestas offline pueden mostrar listas cacheadas con freshness visible.
+- Borrado `204` no intenta parsear un envelope inexistente.
+- Historial vacío no fabrica eventos.
+- `dispatched != acknowledged`; alert ACK de usuario no equivale a ACK físico.
+
+## Evidencia local del Slice A
+
+- `HydroDomainApi` modela acciones, schedules, reglas y ejecuciones sin campos
+  físicos ni aliases legacy.
+- `HttpHydroDomainApi` añade list/show/create/update/delete y ejecuciones con
+  idempotencia, `If-Match`, invalidación y tratamiento estricto de `204`.
+- Tres pruebas nuevas cubren parsing/paginación, create→patch→delete, headers,
+  payload reducido y rechazo de action/timezone/status inválidos.
+- El source suma **58 tests** y `git diff --check` pasa.
+- El host no dispone de Java/JDK; compilación, tests, lint y assemble quedan
+  pendientes de CI posterior al push autorizado.
+
+## Fuera de alcance
+
+- Diseñar o implementar el dominio HD-016 de alertas.
+- Inventar health Edge/Arduino, MQTT, hardware, deployment o credenciales.
+- Cambiar schemas Core, keys compartidas o contratos OpenAPI.
+- Background notifications/push, cámara y release hardening.

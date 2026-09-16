@@ -147,6 +147,75 @@ data class ApiDosingRequest(
     val updatedAt: Instant
 )
 
+sealed interface ApiAutomationAction {
+    val actuatorKey: String
+
+    data class SetState(
+        override val actuatorKey: String,
+        val targetState: Boolean
+    ) : ApiAutomationAction
+
+    data class RunFor(
+        override val actuatorKey: String,
+        val durationSeconds: Int
+    ) : ApiAutomationAction
+
+    data class NutrientDose(
+        override val actuatorKey: String,
+        val nutrientKey: String,
+        val amountMl: Double
+    ) : ApiAutomationAction
+}
+
+sealed interface ApiAutomationSchedule {
+    val misfireGraceSeconds: Int
+
+    data class Once(
+        val onceAt: Instant,
+        override val misfireGraceSeconds: Int
+    ) : ApiAutomationSchedule
+
+    data class Daily(
+        val timeOfDay: String,
+        val timezoneName: String,
+        override val misfireGraceSeconds: Int
+    ) : ApiAutomationSchedule
+
+    data class Weekdays(
+        val timeOfDay: String,
+        val timezoneName: String,
+        val isoWeekdays: List<Int>,
+        override val misfireGraceSeconds: Int
+    ) : ApiAutomationSchedule
+}
+
+data class ApiAutomationDraft(
+    val name: String,
+    val action: ApiAutomationAction,
+    val schedule: ApiAutomationSchedule
+)
+
+data class ApiAutomation(
+    val ruleUuid: String,
+    val version: Int,
+    val name: String,
+    val action: ApiAutomationAction,
+    val schedule: ApiAutomationSchedule,
+    val enabled: Boolean,
+    val deletedAt: Instant?,
+    val nextRunAt: Instant?,
+    val updatedAt: Instant
+)
+
+data class ApiAutomationExecution(
+    val executionUuid: String,
+    val ruleUuid: String,
+    val scheduledFor: Instant,
+    val statusKey: String,
+    val commandUuid: String?,
+    val errorMessage: String?
+)
+
 data class ApiPage<T>(
     val items: List<T>,
     val hasMore: Boolean,
@@ -194,6 +263,22 @@ interface HydroDomainApi {
     suspend fun createSetStateCommand(actuatorKey: String, targetState: Boolean): ApiCommand
     suspend fun dosingRequest(requestUuid: String): ApiDosingRequest
     suspend fun createDosingRequest(nutrientKey: String, amountMl: Double): ApiDosingRequest
+    suspend fun automations(limit: Int = 100, cursor: String? = null): ApiPage<ApiAutomation>
+    suspend fun automation(ruleUuid: String): ApiAutomation
+    suspend fun createAutomation(draft: ApiAutomationDraft): ApiAutomation
+    suspend fun updateAutomation(
+        ruleUuid: String,
+        version: Int,
+        name: String? = null,
+        action: ApiAutomationAction? = null,
+        schedule: ApiAutomationSchedule? = null,
+        enabled: Boolean? = null
+    ): ApiAutomation
+    suspend fun deleteAutomation(ruleUuid: String, version: Int)
+    suspend fun automationExecutions(
+        limit: Int = 100,
+        cursor: String? = null
+    ): ApiPage<ApiAutomationExecution>
 }
 
 object HydroApiContract {
@@ -235,4 +320,7 @@ object HydroApiContract {
     val commandStatusKeys: Set<String> = setOf("pending", "sent", "acknowledged", "failed", "expired")
     val dosingStatusKeys: Set<String> = setOf("pending", "command_created", "completed", "failed", "expired")
     val completionBases: Set<String> = setOf("output_applied", "feedback_verified", "safe_state_applied")
+    val automationActionKeys: Set<String> = setOf("set_state", "run_for", "nutrient_dose")
+    val automationScheduleTypes: Set<String> = setOf("once", "daily", "weekdays")
+    val automationExecutionStatusKeys: Set<String> = setOf("running", "dispatched", "skipped", "failed")
 }

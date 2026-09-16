@@ -132,6 +132,108 @@ class HttpHydroDomainApiTest {
     }
 
     @Test
+    fun readsCanonicalAutomationsAndExecutionsWithoutTreatingDispatchAsAck() = runBlocking {
+        val ruleUuid = "66666666-6666-4666-8666-666666666666"
+        val responses = ArrayDeque(
+            listOf(
+                StubResponse(200, pageEnvelope("[${automationJson(ruleUuid, 3, true)}]", false, null)),
+                StubResponse(200, pageEnvelope("[${executionJson(ruleUuid, "dispatched")}]", false, null))
+            )
+        )
+        val api = api(responses, mutableListOf())
+
+        val rule = api.automations().items.single()
+        val execution = api.automationExecutions().items.single()
+
+        assertEquals(3, rule.version)
+        assertTrue(rule.enabled)
+        assertTrue(rule.action is ApiAutomationAction.SetState)
+        assertTrue(rule.schedule is ApiAutomationSchedule.Daily)
+        assertEquals("dispatched", execution.statusKey)
+        assertNull(execution.commandUuid)
+    }
+
+    @Test
+    fun createsUpdatesAndDeletesAutomationWithIdempotencyAndStrongVersion() = runBlocking {
+        val ruleUuid = UUID.fromString("66666666-6666-4666-8666-666666666666")
+        val responses = ArrayDeque(
+            listOf(
+                StubResponse(201, envelope(automationJson(ruleUuid.toString(), 1, false))),
+                StubResponse(200, envelope(automationJson(ruleUuid.toString(), 2, true))),
+                StubResponse(204, "")
+            )
+        )
+        val connections = mutableListOf<StubHttpURLConnection>()
+        val api = api(responses, connections, uuid = { ruleUuid })
+        val draft = ApiAutomationDraft(
+            name = "Ventilación diaria",
+            action = ApiAutomationAction.SetState("fan", true),
+            schedule = ApiAutomationSchedule.Daily(
+                timeOfDay = "08:30:00",
+                timezoneName = "America/Mexico_City",
+                misfireGraceSeconds = 300
+            )
+        )
+
+        val created = api.createAutomation(draft)
+        val enabled = api.updateAutomation(created.ruleUuid, created.version, enabled = true)
+        api.deleteAutomation(enabled.ruleUuid, enabled.version)
+
+        assertFalse(created.enabled)
+        assertTrue(enabled.enabled)
+        assertEquals(listOf("POST", "PATCH", "DELETE"), connections.map { it.requestMethod })
+        assertEquals(ruleUuid.toString(), connections[0].headers["Idempotency-Key"])
+        assertTrue(connections[0].requestBodyText.contains("\"rule_uuid\":\"$ruleUuid\""))
+        assertTrue(connections[0].requestBodyText.contains("\"timezone_name\":\"America/Mexico_City\""))
+        assertFalse(connections[0].requestBodyText.contains("is_enabled"))
+        assertEquals("\"1\"", connections[1].headers["If-Match"])
+        assertEquals("\"2\"", connections[2].headers["If-Match"])
+    }
+
+    @Test
+    fun rejectsUnknownAutomationShapesAndInvalidClientDrafts() = runBlocking {
+        val ruleUuid = "66666666-6666-4666-8666-666666666666"
+        val invalidResponses = listOf(
+            automationJson(ruleUuid, 1, false).replace("\"set_state\"", "\"unknown\""),
+            automationJson(ruleUuid, 1, false).replace("America/Mexico_City", "Not/AZone")
+        )
+        invalidResponses.forEach { body ->
+            val error = expectDomainError {
+                api(
+                    ArrayDeque(listOf(StubResponse(200, pageEnvelope("[$body]", false, null)))),
+                    mutableListOf()
+                ).automations()
+            }
+            assertEquals("api.invalid_response", error.problem.code)
+        }
+
+        val invalidExecution = executionJson(ruleUuid, "acknowledged")
+        val executionError = expectDomainError {
+            api(
+                ArrayDeque(listOf(StubResponse(200, pageEnvelope("[$invalidExecution]", false, null)))),
+                mutableListOf()
+            ).automationExecutions()
+        }
+        assertEquals("api.invalid_response", executionError.problem.code)
+
+        val draftError = expectDomainError {
+            api(ArrayDeque<StubResponse>(), mutableListOf()).createAutomation(
+                ApiAutomationDraft(
+                    name = " ",
+                    action = ApiAutomationAction.RunFor("fan", 0),
+                    schedule = ApiAutomationSchedule.Weekdays(
+                        "07:00:00",
+                        "America/Mexico_City",
+                        emptyList(),
+                        300
+                    )
+                )
+            )
+        }
+        assertEquals("api.invalid_response", draftError.problem.code)
+    }
+
+    @Test
     fun retriesLostIdempotentCommandWithTheSameUuidAndPayload() = runBlocking {
         val commandUuid = UUID.fromString("88888888-8888-4888-8888-888888888888")
         val responses = ArrayDeque(
@@ -556,6 +658,12 @@ class HttpHydroDomainApiTest {
         applicationUuid: String?
     ): String =
         """{"request_uuid":"$uuid","nutrient_key":"flora_grow","actuator_key":"flora_grow_pump","amount_ml":12.5,"status_key":"$status","command_uuid":${commandUuid?.let { "\"$it\"" } ?: "null"},"application_uuid":${applicationUuid?.let { "\"$it\"" } ?: "null"},"requested_at":"2026-09-15T12:00:00Z","expires_at":"2026-09-15T12:05:00Z","correlated_at":${commandUuid?.let { "\"2026-09-15T12:00:01Z\"" } ?: "null"},"completed_at":${applicationUuid?.let { "\"2026-09-15T12:00:03Z\"" } ?: "null"},"failed_at":null,"error_message":null,"updated_at":"2026-09-15T12:00:03Z"}"""
+
+    private fun automationJson(uuid: String, version: Int, enabled: Boolean): String =
+        """{"rule_uuid":"$uuid","version":$version,"name":"Ventilación diaria","action":{"actuator_key":"fan","action_key":"set_state","target_state":1},"schedule":{"schedule_type":"daily","time_of_day":"08:30:00","timezone_name":"America/Mexico_City","misfire_grace_seconds":300},"is_enabled":$enabled,"deleted_at":null,"next_run_at":"2026-09-16T14:30:00Z","updated_at":"2026-09-15T12:00:03Z"}"""
+
+    private fun executionJson(ruleUuid: String, status: String): String =
+        """{"execution_uuid":"99999999-9999-4999-8999-999999999999","rule_uuid":"$ruleUuid","scheduled_for":"2026-09-16T14:30:00Z","status_key":"$status","command_uuid":null,"error_message":null}"""
 
     private data class StubResponse(
         val status: Int,

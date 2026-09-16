@@ -16,6 +16,7 @@ import java.net.URL
 import java.net.URLEncoder
 import java.time.Duration
 import java.time.Instant
+import java.time.ZoneId
 import java.util.UUID
 
 class HttpHydroDomainApi(
@@ -255,6 +256,79 @@ class HttpHydroDomainApi(
         return created
     }
 
+    override suspend fun automations(limit: Int, cursor: String?): ApiPage<ApiAutomation> {
+        val path = pagedPath("automations", limit, cursor)
+        return request(contextProvider(), "GET", path).page { it.toAutomation() }
+    }
+
+    override suspend fun automation(ruleUuid: String): ApiAutomation =
+        request(
+            contextProvider(),
+            "GET",
+            "automations/${requireUuid(ruleUuid)}"
+        ).requireDataObject().toAutomation()
+
+    override suspend fun createAutomation(draft: ApiAutomationDraft): ApiAutomation {
+        val ruleUuid = uuid().toString()
+        val context = contextProvider()
+        val created = requestIdempotent(
+            context = context,
+            method = "POST",
+            path = "automations",
+            body = draft.toJson().apply { put("rule_uuid", ruleUuid) },
+            idempotencyKey = ruleUuid
+        ).requireDataObject().toAutomation()
+        invalidateCachedReads(setOf("automations", "automation-executions"))
+        return created
+    }
+
+    override suspend fun updateAutomation(
+        ruleUuid: String,
+        version: Int,
+        name: String?,
+        action: ApiAutomationAction?,
+        schedule: ApiAutomationSchedule?,
+        enabled: Boolean?
+    ): ApiAutomation {
+        if (version < 1) throw invalidResponse()
+        val body = JSONObject().apply {
+            name?.let { put("name", requireAutomationName(it)) }
+            action?.let { put("action", it.toJson()) }
+            schedule?.let { put("schedule", it.toJson()) }
+            enabled?.let { put("is_enabled", it) }
+        }
+        if (body.length() == 0) throw invalidResponse()
+
+        val updated = request(
+            context = contextProvider(),
+            method = "PATCH",
+            path = "automations/${requireUuid(ruleUuid)}",
+            body = body,
+            ifMatchVersion = version
+        ).requireDataObject().toAutomation()
+        invalidateCachedReads(setOf("automations", "automation-executions"))
+        return updated
+    }
+
+    override suspend fun deleteAutomation(ruleUuid: String, version: Int) {
+        if (version < 1) throw invalidResponse()
+        requestNoContent(
+            context = contextProvider(),
+            method = "DELETE",
+            path = "automations/${requireUuid(ruleUuid)}",
+            ifMatchVersion = version
+        )
+        invalidateCachedReads(setOf("automations", "automation-executions"))
+    }
+
+    override suspend fun automationExecutions(
+        limit: Int,
+        cursor: String?
+    ): ApiPage<ApiAutomationExecution> {
+        val path = pagedPath("automation-executions", limit, cursor)
+        return request(contextProvider(), "GET", path).page { it.toAutomationExecution() }
+    }
+
     private suspend fun <T> list(path: String, transform: (JSONObject) -> T): List<T> {
         val envelope = request(contextProvider(), "GET", path)
         return envelope.requireDataArray().objects().map(transform)
@@ -299,6 +373,7 @@ class HttpHydroDomainApi(
         path: String,
         body: JSONObject? = null,
         idempotencyKey: String? = null,
+        ifMatchVersion: Int? = null,
         allowCache: Boolean = method == "GET"
     ): JSONObject {
         validateContext(context)
@@ -307,7 +382,14 @@ class HttpHydroDomainApi(
 
         repeat(attempts) { attempt ->
             try {
-                val raw = executeNetworkRequest(context, method, path, body, idempotencyKey)
+                val raw = executeNetworkRequest(
+                    context,
+                    method,
+                    path,
+                    body,
+                    idempotencyKey,
+                    ifMatchVersion
+                )
                 val envelope = parseEnvelope(raw)
                 markAuthenticatedSuccess()
                 mutableDataStatus.value = DomainDataStatus(
@@ -344,12 +426,36 @@ class HttpHydroDomainApi(
         throw failure
     }
 
+    private suspend fun requestNoContent(
+        context: DomainApiContext,
+        method: String,
+        path: String,
+        ifMatchVersion: Int
+    ) {
+        validateContext(context)
+        val raw = executeNetworkRequest(
+            context = context,
+            method = method,
+            path = path,
+            body = null,
+            idempotencyKey = null,
+            ifMatchVersion = ifMatchVersion
+        )
+        if (raw.isNotBlank()) throw invalidResponse()
+        markAuthenticatedSuccess()
+        mutableDataStatus.value = DomainDataStatus(
+            source = DomainDataSource.LIVE,
+            observedAt = now()
+        )
+    }
+
     private suspend fun executeNetworkRequest(
         context: DomainApiContext,
         method: String,
         path: String,
         body: JSONObject?,
-        idempotencyKey: String?
+        idempotencyKey: String?,
+        ifMatchVersion: Int?
     ): String = withContext(Dispatchers.IO) {
         val connection = try {
             connectionFactory(URL("${baseUrl.trimEnd('/')}/sites/${context.siteKey}/${path.trimStart('/')}"))
@@ -368,6 +474,7 @@ class HttpHydroDomainApi(
             connection.setRequestProperty("Accept", "application/json")
             connection.setRequestProperty("Authorization", "Bearer ${context.accessToken}")
             idempotencyKey?.let { connection.setRequestProperty("Idempotency-Key", it) }
+            ifMatchVersion?.let { connection.setRequestProperty("If-Match", "\"$it\"") }
 
             if (body != null) {
                 connection.doOutput = true
@@ -596,6 +703,135 @@ class HttpHydroDomainApi(
         updatedAt = requireInstant("updated_at")
     )
 
+    private fun JSONObject.toAutomation(): ApiAutomation = ApiAutomation(
+        ruleUuid = requireUuid(requireString("rule_uuid")),
+        version = requirePositiveInt("version"),
+        name = requireAutomationName(requireString("name")),
+        action = getJSONObject("action").toAutomationAction(),
+        schedule = getJSONObject("schedule").toAutomationSchedule(),
+        enabled = requireBoolean("is_enabled"),
+        deletedAt = nullableInstant("deleted_at"),
+        nextRunAt = nullableInstant("next_run_at"),
+        updatedAt = requireInstant("updated_at")
+    )
+
+    private fun JSONObject.toAutomationAction(): ApiAutomationAction =
+        when (requireAllowedKey("action_key", HydroApiContract.automationActionKeys)) {
+            "set_state" -> ApiAutomationAction.SetState(
+                actuatorKey = requireAllowedKey("actuator_key", HydroApiContract.actuatorKeys),
+                targetState = requireBinaryState("target_state")
+            )
+            "run_for" -> ApiAutomationAction.RunFor(
+                actuatorKey = requireAllowedKey("actuator_key", HydroApiContract.actuatorKeys),
+                durationSeconds = requirePositiveInt("duration_seconds")
+            )
+            "nutrient_dose" -> ApiAutomationAction.NutrientDose(
+                actuatorKey = requireAllowedKey("actuator_key", HydroApiContract.actuatorKeys),
+                nutrientKey = requireAllowedKey("nutrient_key", HydroApiContract.nutrientKeys),
+                amountMl = requireFiniteNumber("amount_ml").takeIf {
+                    it > 0.0 && it <= MAX_DOSING_ML
+                } ?: throw invalidResponse()
+            )
+            else -> throw invalidResponse()
+        }
+
+    private fun JSONObject.toAutomationSchedule(): ApiAutomationSchedule {
+        val grace = requirePositiveInt("misfire_grace_seconds")
+            .takeIf { it <= MAX_MISFIRE_GRACE_SECONDS } ?: throw invalidResponse()
+        return when (requireAllowedKey("schedule_type", HydroApiContract.automationScheduleTypes)) {
+            "once" -> ApiAutomationSchedule.Once(
+                onceAt = requireInstant("once_at"),
+                misfireGraceSeconds = grace
+            )
+            "daily" -> ApiAutomationSchedule.Daily(
+                timeOfDay = requireTimeOfDay("time_of_day"),
+                timezoneName = requireTimezone("timezone_name"),
+                misfireGraceSeconds = grace
+            )
+            "weekdays" -> {
+                val weekdays = getJSONArray("iso_weekdays").ints()
+                if (weekdays.isEmpty() || weekdays.distinct().size != weekdays.size ||
+                    weekdays.any { it !in 1..7 }
+                ) throw invalidResponse()
+                ApiAutomationSchedule.Weekdays(
+                    timeOfDay = requireTimeOfDay("time_of_day"),
+                    timezoneName = requireTimezone("timezone_name"),
+                    isoWeekdays = weekdays,
+                    misfireGraceSeconds = grace
+                )
+            }
+            else -> throw invalidResponse()
+        }
+    }
+
+    private fun JSONObject.toAutomationExecution(): ApiAutomationExecution =
+        ApiAutomationExecution(
+            executionUuid = requireUuid(requireString("execution_uuid")),
+            ruleUuid = requireUuid(requireString("rule_uuid")),
+            scheduledFor = requireInstant("scheduled_for"),
+            statusKey = requireAllowedKey(
+                "status_key",
+                HydroApiContract.automationExecutionStatusKeys
+            ),
+            commandUuid = nullableString("command_uuid")?.let(::requireUuid),
+            errorMessage = nullableString("error_message")
+        )
+
+    private fun ApiAutomationDraft.toJson(): JSONObject = JSONObject().apply {
+        put("name", requireAutomationName(name))
+        put("action", action.toJson())
+        put("schedule", schedule.toJson())
+    }
+
+    private fun ApiAutomationAction.toJson(): JSONObject = JSONObject().apply {
+        if (actuatorKey !in HydroApiContract.actuatorKeys) throw invalidResponse()
+        put("actuator_key", actuatorKey)
+        when (this@toJson) {
+            is ApiAutomationAction.SetState -> {
+                put("action_key", "set_state")
+                put("target_state", if (targetState) 1 else 0)
+            }
+            is ApiAutomationAction.RunFor -> {
+                if (durationSeconds < 1) throw invalidResponse()
+                put("action_key", "run_for")
+                put("duration_seconds", durationSeconds)
+            }
+            is ApiAutomationAction.NutrientDose -> {
+                if (nutrientKey !in HydroApiContract.nutrientKeys || !amountMl.isFinite() ||
+                    amountMl <= 0.0 || amountMl > MAX_DOSING_ML
+                ) throw invalidResponse()
+                put("action_key", "nutrient_dose")
+                put("nutrient_key", nutrientKey)
+                put("amount_ml", amountMl)
+            }
+        }
+    }
+
+    private fun ApiAutomationSchedule.toJson(): JSONObject = JSONObject().apply {
+        if (misfireGraceSeconds !in 1..MAX_MISFIRE_GRACE_SECONDS) throw invalidResponse()
+        put("misfire_grace_seconds", misfireGraceSeconds)
+        when (this@toJson) {
+            is ApiAutomationSchedule.Once -> {
+                put("schedule_type", "once")
+                put("once_at", onceAt.toString())
+            }
+            is ApiAutomationSchedule.Daily -> {
+                put("schedule_type", "daily")
+                put("time_of_day", validateTimeOfDay(timeOfDay))
+                put("timezone_name", validateTimezone(timezoneName))
+            }
+            is ApiAutomationSchedule.Weekdays -> {
+                if (isoWeekdays.isEmpty() || isoWeekdays.distinct().size != isoWeekdays.size ||
+                    isoWeekdays.any { it !in 1..7 }
+                ) throw invalidResponse()
+                put("schedule_type", "weekdays")
+                put("time_of_day", validateTimeOfDay(timeOfDay))
+                put("timezone_name", validateTimezone(timezoneName))
+                put("iso_weekdays", JSONArray(isoWeekdays.sorted()))
+            }
+        }
+    }
+
     private fun <T> JSONObject.page(transform: (JSONObject) -> T): ApiPage<T> {
         val data = requireDataArray()
         val meta = requireMeta()
@@ -611,6 +847,9 @@ class HttpHydroDomainApi(
 
     private fun JSONArray.objects(): List<JSONObject> =
         (0 until length()).map { index -> getJSONObject(index) }
+
+    private fun JSONArray.ints(): List<Int> =
+        (0 until length()).map { index -> getInt(index) }
 
     private fun JSONObject.requireString(key: String): String =
         getString(key).takeIf(String::isNotBlank) ?: throw invalidResponse()
@@ -651,6 +890,12 @@ class HttpHydroDomainApi(
     private fun JSONObject.requireLogicalKey(key: String): String =
         requireString(key).takeIf(LOGICAL_KEY::matches) ?: throw invalidResponse()
 
+    private fun JSONObject.requireTimeOfDay(key: String): String =
+        validateTimeOfDay(requireString(key))
+
+    private fun JSONObject.requireTimezone(key: String): String =
+        validateTimezone(requireString(key))
+
     private fun JSONObject.requireInstant(key: String): Instant =
         parseUtcInstant(requireString(key))
 
@@ -669,6 +914,23 @@ class HttpHydroDomainApi(
 
     private fun requireCropKey(value: String) {
         if (value !in HydroApiContract.cropKeys) throw invalidResponse()
+    }
+
+    private fun requireAutomationName(value: String): String =
+        value.trim().takeIf { it.isNotEmpty() && it.length <= 100 } ?: throw invalidResponse()
+
+    private fun validateTimeOfDay(value: String): String =
+        value.takeIf(TIME_OF_DAY::matches) ?: throw invalidResponse()
+
+    private fun validateTimezone(value: String): String =
+        runCatching { ZoneId.of(value).id }.getOrElse { throw invalidResponse() }
+
+    private fun pagedPath(resource: String, limit: Int, cursor: String?): String {
+        if (limit !in 1..100) throw invalidResponse()
+        return buildList {
+            add("limit=$limit")
+            cursor?.let { add("cursor=${encodeQuery(it)}") }
+        }.joinToString("&").let { "$resource?$it" }
     }
 
     private fun validateContext(context: DomainApiContext) {
@@ -707,8 +969,10 @@ class HttpHydroDomainApi(
         private const val MUTATION_RETRY_DELAY_MILLIS = 250L
         private const val INTENT_TTL_SECONDS = 5L * 60L
         private const val MAX_DOSING_ML = 9_999_999.999
+        private const val MAX_MISFIRE_GRACE_SECONDS = 3600
         private val FUTURE_CACHE_TOLERANCE = Duration.ofMinutes(5)
         // Keep this aligned with API v1's LogicalKey schema in openapi.json.
         private val LOGICAL_KEY = Regex("^[a-z0-9][a-z0-9_-]{0,63}$")
+        private val TIME_OF_DAY = Regex("^(?:[01][0-9]|2[0-3]):[0-5][0-9]:[0-5][0-9]$")
     }
 }
