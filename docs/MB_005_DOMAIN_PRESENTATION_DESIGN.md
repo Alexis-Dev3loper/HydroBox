@@ -2,7 +2,7 @@
 
 Actualizado: **2026-09-16**.
 
-Estado: **AUDITADO / DISEÑO FUNCIONAL EN PROCESO**.
+Estado: **IMPLEMENTADO LOCALMENTE / VERIFICACIÓN CI Y PUBLICACIÓN PENDIENTES**.
 
 ## Estado heredado
 
@@ -64,3 +64,16 @@ La auditoría MB-005 encontró deuda únicamente en presentación:
 - eventos/alertas/Automation reales de Historial (MB-007);
 - calibración o conversión física Edge;
 - cambios API, DB, MQTT, hardware, deployment o credenciales reales.
+
+## Evidencia local
+
+- `64d5566`: auditoría y diseño de semántica de presentación.
+- `cbf1b94`: modelo puro de unidad/precisión/freshness/tiempo/series y tests;
+  contract test adicional rechaza keys de catálogo desconocidas.
+- `950139f`: Inicio, Historial y Cultivos consumen unidades/rangos/duración API,
+  presentan hora local y eliminan fallbacks físicos/temporales inventados.
+- El source tree suma **46 tests**. El escaneo no encuentra
+  `fallbackCycleDays`, `%` aplicado a `water_level`, rangos óptimos locales ni
+  índices ficticios para el eje temporal.
+- `git diff --check` pasa. El host continúa sin JDK/SDK; tests, lint y assemble
+  quedan pendientes de la CI posterior al push.

@@ -20,6 +20,9 @@ Este repositorio es la aplicación Android de HydroBox. En el workspace completo
   dosing pasan por API v1, la UI separa intención/lifecycle/estado reportado y
   se retiraron cliente, configuración y dependencia MQTT directos. La CI
   `35081160677` pasa tests, lint y assemble; Mobile #5 está cerrada.
+- MB-005 está implementado localmente en `64d5566`–`950139f`: elimina
+  duraciones/unidades inventadas, usa tiempo local/freshness explícita y
+  conserva cero frente a missing. Mantiene 46 tests en source; falta push/CI.
 - Room v4 elimina irreversiblemente `passwordPlain`; access/refresh tokens solo
   se guardan cifrados con una clave Android Keystore y quedan fuera de backups.
 - MB-001 validó CI reproducible con JDK 17/SDK 36. MB-002 quedó publicado y
