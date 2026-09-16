@@ -1,242 +1,249 @@
 package com.hydrobox.app.ui.navigation
 
 import androidx.compose.foundation.BorderStroke
-import androidx.compose.foundation.background
-import androidx.compose.foundation.border
 import androidx.compose.foundation.layout.*
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.items
 import androidx.compose.foundation.shape.RoundedCornerShape
-import androidx.compose.runtime.saveable.rememberSaveable
-import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.MoreVert
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.clip
-import androidx.compose.ui.draw.shadow
-import androidx.compose.ui.graphics.Brush
 import androidx.compose.ui.graphics.Color
-import androidx.compose.ui.graphics.SolidColor
-import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.text.font.FontWeight
 import androidx.compose.ui.unit.dp
-import com.hydrobox.app.mqtt.HydroMqtt
-
-private enum class DeviceKind { Switchable, Doser }
-
-private data class DeviceRow(
-    val name: String,
-    val kind: DeviceKind,
-    val isOn: MutableState<Boolean> = mutableStateOf(false) // solo para Switchable
-)
+import com.hydrobox.app.api.*
+import com.hydrobox.app.ui.model.*
+import kotlinx.coroutines.CancellationException
+import kotlinx.coroutines.launch
 
 @OptIn(ExperimentalMaterial3Api::class)
 @Composable
-fun ActuatorsScreen(paddingValues: PaddingValues) {
-    val devices = remember {
-        listOf(
-            DeviceRow("Bomba de agua", DeviceKind.Switchable),
-            DeviceRow("Ventilación", DeviceKind.Switchable),
-            DeviceRow("Luz de cultivo", DeviceKind.Switchable),
-            DeviceRow("Peristáltica A — FloraMicro", DeviceKind.Doser),
-            DeviceRow("Peristáltica B — FloraGrow", DeviceKind.Doser),
-            DeviceRow("Peristáltica C — FloraBloom", DeviceKind.Doser),
-        )
+fun ActuatorsScreen(
+    paddingValues: PaddingValues,
+    api: HydroDomainApi,
+    scopes: Set<String>
+) {
+    var actuators by remember { mutableStateOf<List<ApiActuator>>(emptyList()) }
+    var nutrientsByActuator by remember { mutableStateOf<Map<String, ApiNutrient>>(emptyMap()) }
+    var latestCommands by remember { mutableStateOf<Map<String, ApiCommand>>(emptyMap()) }
+    var loading by remember { mutableStateOf(true) }
+    var loadError by remember { mutableStateOf<String?>(null) }
+    var refresh by remember { mutableIntStateOf(0) }
+    var commandInFlight by remember { mutableStateOf<Set<String>>(emptySet()) }
+    var dosingNutrient by remember { mutableStateOf<ApiNutrient?>(null) }
+    var dosingInFlight by remember { mutableStateOf(false) }
+    var lastDosing by remember { mutableStateOf<ApiDosingRequest?>(null) }
+    var operationMessage by remember { mutableStateOf<String?>(null) }
+    val scope = rememberCoroutineScope()
+
+    LaunchedEffect(api, refresh) {
+        loading = true
+        loadError = null
+        try {
+            val actuatorCatalog = api.actuators().filter(ApiActuator::active)
+            val nutrientCatalog = api.nutrients().filter(ApiNutrient::active)
+            val commands = api.commands(limit = 100).items
+            actuators = actuatorCatalog
+            nutrientsByActuator = nutrientCatalog.associateBy(ApiNutrient::dosingActuatorKey)
+            latestCommands = commands.distinctBy(ApiCommand::actuatorKey)
+                .associateBy(ApiCommand::actuatorKey)
+        } catch (cancelled: CancellationException) {
+            throw cancelled
+        } catch (error: Exception) {
+            loadError = error.userFacingCode()
+        } finally {
+            loading = false
+        }
     }
 
-    var dosingDevice by remember { mutableStateOf<DeviceRow?>(null) }
-    val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
-
-    Column(
+    Box(
         Modifier
             .padding(paddingValues)
             .fillMaxSize()
-            .padding(16.dp),
-        verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
-        Text(
-            "Actuadores Registrados",
-            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold)
-        )
-
-        devices.forEach { row ->
-            DeviceRowPill(
-                title = row.name,
-                kind = row.kind,
-                isOn = row.isOn,
-                onToggle = { new ->
-                    row.isOn.value = new
-                    val id = deviceIdFor(row.name)
-                    HydroMqtt.sendSwitch(id, new)
-                },
-                onDoseClick = { dosingDevice = row },
-                onDetails = {
-                    // TODO: navegar a “Características” de este actuador si lo deseas
-                    // navController.navigate("actuator/${row.name}")
+        when {
+            loading && actuators.isEmpty() -> CircularProgressIndicator(Modifier.align(Alignment.Center))
+            loadError != null && actuators.isEmpty() -> ErrorState(loadError!!) { refresh += 1 }
+            else -> LazyColumn(
+                modifier = Modifier.fillMaxSize(),
+                contentPadding = PaddingValues(16.dp),
+                verticalArrangement = Arrangement.spacedBy(14.dp)
+            ) {
+                item {
+                    Row(
+                        modifier = Modifier.fillMaxWidth(),
+                        verticalAlignment = Alignment.CenterVertically,
+                        horizontalArrangement = Arrangement.SpaceBetween
+                    ) {
+                        Text(
+                            "Actuadores",
+                            style = MaterialTheme.typography.headlineSmall.copy(fontWeight = FontWeight.SemiBold)
+                        )
+                        OutlinedButton(onClick = { refresh += 1 }, enabled = !loading) {
+                            Text("Actualizar")
+                        }
+                    }
                 }
-            )
+                loadError?.let { code ->
+                    item { StatusMessage("No se pudo actualizar: $code", MaterialTheme.colorScheme.error) }
+                }
+                operationMessage?.let { message ->
+                    item { StatusMessage(message, MaterialTheme.colorScheme.primary) }
+                }
+                lastDosing?.let { request ->
+                    item {
+                        StatusMessage(
+                            "${request.amountMl} ml · ${dosingLifecycleLabel(request)}",
+                            MaterialTheme.colorScheme.secondary
+                        )
+                    }
+                }
+                items(actuators, key = ApiActuator::actuatorKey) { actuator ->
+                    val nutrient = nutrientsByActuator[actuator.actuatorKey]
+                    ActuatorCard(
+                        actuator = actuator,
+                        command = latestCommands[actuator.actuatorKey],
+                        nutrient = nutrient,
+                        busy = actuator.actuatorKey in commandInFlight ||
+                            (dosingInFlight && dosingNutrient?.dosingActuatorKey == actuator.actuatorKey),
+                        canCommand = "command:write" in scopes,
+                        canDose = "dosing:write" in scopes,
+                        onSetState = { target ->
+                            scope.launch {
+                                commandInFlight = commandInFlight + actuator.actuatorKey
+                                operationMessage = null
+                                try {
+                                    val command = api.createSetStateCommand(actuator.actuatorKey, target)
+                                    latestCommands = latestCommands + (actuator.actuatorKey to command)
+                                    operationMessage = commandLifecycleLabel(command)
+                                    refresh += 1
+                                } catch (cancelled: CancellationException) {
+                                    throw cancelled
+                                } catch (error: Exception) {
+                                    operationMessage = "No se registró el comando: ${error.userFacingCode()}"
+                                } finally {
+                                    commandInFlight = commandInFlight - actuator.actuatorKey
+                                }
+                            }
+                        },
+                        onDose = { dosingNutrient = nutrient }
+                    )
+                }
+            }
         }
-
-        Spacer(Modifier.weight(1f))
     }
 
-    // Sheet de dosificación para peristálticas
-    if (dosingDevice != null) {
+    dosingNutrient?.let { nutrient ->
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
         ModalBottomSheet(
-            onDismissRequest = { dosingDevice = null },
+            onDismissRequest = { if (!dosingInFlight) dosingNutrient = null },
             sheetState = sheetState
         ) {
             DoseSheet(
-                deviceName = dosingDevice!!.name,
-                onStartAuto = {
-                    dosingDevice = null
+                nutrient = nutrient,
+                busy = dosingInFlight,
+                onSubmit = { amountMl ->
+                    scope.launch {
+                        dosingInFlight = true
+                        operationMessage = null
+                        try {
+                            val request = api.createDosingRequest(nutrient.nutrientKey, amountMl)
+                            lastDosing = request
+                            operationMessage = dosingLifecycleLabel(request)
+                            dosingNutrient = null
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            operationMessage = "No se registró la dosis: ${error.userFacingCode()}"
+                        } finally {
+                            dosingInFlight = false
+                        }
+                    }
                 },
-                onStartManual = { ml ->
-                    val id = deviceIdFor(dosingDevice!!.name)
-                    HydroMqtt.sendDose(id, ml)
-                    dosingDevice = null
-                },
-                onClose = { dosingDevice = null }
+                onClose = { dosingNutrient = null }
             )
         }
     }
 }
-private fun deviceIdFor(title: String): String =
-    when {
-        title.startsWith("Bomba", ignoreCase = true)        -> "pump"
-        title.startsWith("Ventilación", ignoreCase = true)  -> "fan"
-        title.startsWith("Luz", ignoreCase = true)          -> "light"
-        title.contains("Micro", ignoreCase = true)          -> "doser_a"
-        title.contains("Grow", ignoreCase = true)           -> "doser_b"
-        title.contains("Bloom", ignoreCase = true)          -> "doser_c"
-        else                                                -> title.lowercase().replace(" ", "_")
-    }
 
 @Composable
-private fun DeviceRowPill(
-    title: String,
-    kind: DeviceKind,
-    isOn: State<Boolean>,
-    onToggle: (Boolean) -> Unit,
-    onDoseClick: () -> Unit,
-    onDetails: () -> Unit
+private fun ActuatorCard(
+    actuator: ApiActuator,
+    command: ApiCommand?,
+    nutrient: ApiNutrient?,
+    busy: Boolean,
+    canCommand: Boolean,
+    canDose: Boolean,
+    onSetState: (Boolean) -> Unit,
+    onDose: () -> Unit
 ) {
-    val shape = RoundedCornerShape(28.dp)
-    val cs    = MaterialTheme.colorScheme
-    val neon  = cs.primary
-    val bg    = pillBackgroundBrush(cs)
-
     var menuOpen by remember { mutableStateOf(false) }
-
+    val colors = MaterialTheme.colorScheme
     Surface(
-        color = Color.Transparent,
-        shape = shape,
-        tonalElevation = 1.dp,
-        border = BorderStroke(2.dp, SolidColor(neon)),
-        modifier = Modifier
-            .fillMaxWidth()
-            .height(64.dp)
-            .clip(shape)
-            .shadow(elevation = 2.dp, shape = shape)
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(22.dp),
+        border = BorderStroke(1.dp, colors.primary.copy(alpha = 0.65f)),
+        tonalElevation = 2.dp
     ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .background(bg, shape)
-                .border(BorderStroke(1.dp, SolidColor(cs.onSurface.copy(alpha = 0.06f))), shape)
-                .padding(horizontal = 18.dp)
+        Column(
+            modifier = Modifier.padding(horizontal = 18.dp, vertical = 14.dp),
+            verticalArrangement = Arrangement.spacedBy(6.dp)
         ) {
-            Row(
-                Modifier.fillMaxSize(),
-                verticalAlignment = Alignment.CenterVertically
-            ) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 Text(
-                    title,
-                    style = MaterialTheme.typography.titleMedium,
+                    actuator.name,
+                    style = MaterialTheme.typography.titleMedium.copy(fontWeight = FontWeight.SemiBold),
                     modifier = Modifier.weight(1f)
                 )
-
-                if (kind == DeviceKind.Switchable) {
-                    AssistChip(
-                        onClick = { /* indicador */ },
-                        label = { Text(if (isOn.value) "Activo" else "Apagado") },
-                        colors = AssistChipDefaults.assistChipColors(
-                            containerColor = if (isOn.value) cs.primaryContainer else cs.surfaceVariant,
-                            labelColor = if (isOn.value) cs.onPrimaryContainer else cs.onSurfaceVariant
-                        ),
-                        shape = RoundedCornerShape(9999.dp)
-                    )
-                    Spacer(Modifier.width(8.dp))
-                }
-
                 Box {
-                    FilledTonalIconButton(onClick = { menuOpen = true }) {
-                        Icon(Icons.Filled.MoreVert, contentDescription = null)
+                    FilledTonalIconButton(onClick = { menuOpen = true }, enabled = !busy) {
+                        Icon(Icons.Filled.MoreVert, contentDescription = "Acciones")
                     }
                     DropdownMenu(expanded = menuOpen, onDismissRequest = { menuOpen = false }) {
-                        when (kind) {
-                            DeviceKind.Switchable -> {
-                                val next = !isOn.value
-                                DropdownMenuItem(
-                                    text = { Text(if (next) "Activar" else "Apagar") },
-                                    onClick = { menuOpen = false; onToggle(next) }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Características") },
-                                    onClick = { menuOpen = false; onDetails() }
-                                )
-                            }
-                            DeviceKind.Doser -> {
-                                DropdownMenuItem(
-                                    text = { Text("Dosificar…") },
-                                    onClick = { menuOpen = false; onDoseClick() }
-                                )
-                                DropdownMenuItem(
-                                    text = { Text("Características") },
-                                    onClick = { menuOpen = false; onDetails() }
-                                )
-                            }
+                        if (nutrient == null) {
+                            val target = !actuator.state.desiredState
+                            DropdownMenuItem(
+                                text = { Text(if (target) "Solicitar encendido" else "Solicitar apagado") },
+                                enabled = canCommand,
+                                onClick = { menuOpen = false; onSetState(target) }
+                            )
+                        } else {
+                            DropdownMenuItem(
+                                text = { Text("Dosificar ${nutrient.name}") },
+                                enabled = canDose,
+                                onClick = { menuOpen = false; onDose() }
+                            )
                         }
                     }
                 }
+            }
+            Text(desiredStateLabel(actuator.state.desiredState), color = colors.onSurfaceVariant)
+            Text(reportedStateLabel(actuator.state.reportedState), color = colors.onSurfaceVariant)
+            Text(availabilityLabel(actuator.state.availabilityKey), color = colors.onSurfaceVariant)
+            Text(commandLifecycleLabel(command), color = colors.primary)
+            if (busy) Text("Registrando intención…", color = colors.secondary)
+            if (nutrient == null && !canCommand) {
+                Text("Sin permiso para enviar comandos", color = colors.error)
+            }
+            if (nutrient != null && !canDose) {
+                Text("Sin permiso para solicitar dosis", color = colors.error)
             }
         }
     }
 }
 
 @Composable
-private fun pillBackgroundBrush(cs: ColorScheme): Brush {
-    val isDark = cs.background.luminance() < 0.5f
-    return if (isDark) {
-        Brush.verticalGradient(
-            colors = listOf(
-                cs.primary.copy(alpha = 0.24f),
-                cs.primaryContainer.copy(alpha = 0.40f),
-                cs.surfaceVariant.copy(alpha = 0.18f)
-            )
-        )
-    } else {
-        Brush.verticalGradient(
-            colors = listOf(
-                cs.primaryContainer.copy(alpha = 0.70f),
-                cs.primary.copy(alpha = 0.30f),
-                cs.surface.copy(alpha = 0.55f)
-            )
-        )
-    }
-}
-
-@Composable
 private fun DoseSheet(
-    deviceName: String,
-    onStartAuto: () -> Unit,
-    onStartManual: (Int) -> Unit,
+    nutrient: ApiNutrient,
+    busy: Boolean,
+    onSubmit: (Double) -> Unit,
     onClose: () -> Unit
 ) {
-    var tab by rememberSaveable { mutableIntStateOf(0) }
-    var mlText by remember { mutableStateOf("10") }
-
+    var amountText by remember { mutableStateOf("10") }
+    val amount = amountText.toDoubleOrNull()
     Column(
         Modifier
             .fillMaxWidth()
@@ -244,52 +251,62 @@ private fun DoseSheet(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text(
-            "Dosificar — $deviceName",
+            "Dosificar ${nutrient.name}",
             style = MaterialTheme.typography.titleLarge.copy(fontWeight = FontWeight.SemiBold)
         )
-
+        Text(
+            "Se registrará una intención en mililitros. Edge aplicará la calibración; aceptar no significa ejecución.",
+            color = MaterialTheme.colorScheme.onSurfaceVariant
+        )
+        OutlinedTextField(
+            value = amountText,
+            onValueChange = { candidate ->
+                if (candidate.length <= 11 && candidate.count { it == '.' } <= 1 &&
+                    candidate.all { it.isDigit() || it == '.' }
+                ) amountText = candidate
+            },
+            enabled = !busy,
+            label = { Text("Mililitros (ml)") },
+            singleLine = true
+        )
         Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-            FilterChip(
-                selected = tab == 0,
-                onClick = { tab = 0 },
-                label = { Text("Automática") }
-            )
-            FilterChip(
-                selected = tab == 1,
-                onClick = { tab = 1 },
-                label = { Text("Manual") }
-            )
+            Button(
+                onClick = { onSubmit(amount!!) },
+                enabled = !busy && amount != null && amount > 0.0 && amount <= 9_999_999.999
+            ) { Text(if (busy) "Registrando…" else "Registrar dosis") }
+            OutlinedButton(onClick = onClose, enabled = !busy) { Text("Cancelar") }
         }
-
-        when (tab) {
-            0 -> {
-                Text(
-                    "Aplica la dosis según el perfil guardado (ej. 5 ml cada 4 h).",
-                    color = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ElevatedButton(onClick = onStartAuto) { Text("Iniciar automática") }
-                    OutlinedButton(onClick = onClose) { Text("Cancelar") }
-                }
-            }
-            1 -> {
-                OutlinedTextField(
-                    value = mlText,
-                    onValueChange = { if (it.length <= 4) mlText = it.filter { c -> c.isDigit() } },
-                    label = { Text("Mililitros (ml)") },
-                    singleLine = true
-                )
-                Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    ElevatedButton(onClick = {
-                        val ml = mlText.toIntOrNull() ?: 0
-                        if (ml > 0) onStartManual(ml)
-                    }) { Text("Dosificar ahora") }
-                    OutlinedButton(onClick = onClose) { Text("Cancelar") }
-                }
-            }
-        }
-
         Spacer(Modifier.height(8.dp))
     }
 }
 
+@Composable
+private fun ErrorState(code: String, onRetry: () -> Unit) {
+    Column(
+        modifier = Modifier
+            .fillMaxSize()
+            .padding(24.dp),
+        verticalArrangement = Arrangement.Center,
+        horizontalAlignment = Alignment.CenterHorizontally
+    ) {
+        Text("No se pudieron cargar los actuadores")
+        Spacer(Modifier.height(8.dp))
+        Text(code, color = MaterialTheme.colorScheme.onSurfaceVariant)
+        Spacer(Modifier.height(12.dp))
+        Button(onClick = onRetry) { Text("Reintentar") }
+    }
+}
+
+@Composable
+private fun StatusMessage(message: String, color: Color) {
+    Surface(
+        modifier = Modifier.fillMaxWidth(),
+        shape = RoundedCornerShape(14.dp),
+        color = color.copy(alpha = 0.12f)
+    ) {
+        Text(message, modifier = Modifier.padding(12.dp), color = color)
+    }
+}
+
+private fun Exception.userFacingCode(): String =
+    (this as? DomainApiException)?.problem?.code ?: "mobile.unexpected_error"

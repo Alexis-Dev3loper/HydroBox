@@ -10,8 +10,6 @@ import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.saveable.rememberSaveable
 import androidx.compose.ui.Modifier
-import com.hydrobox.app.mqtt.HydroMqtt
-import com.hydrobox.app.config.HydroBoxEnvironment
 import com.hydrobox.app.ui.navigation.HydroNavRoot
 import com.hydrobox.app.ui.theme.HydroBoxTheme
 import com.hydrobox.app.ui.theme.LocalDarkThemeState
@@ -20,16 +18,6 @@ class MainActivity : ComponentActivity() {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-
-        // LEGACY / DEV ONLY. Release builds force this path off; MB-004 removes it.
-        val legacyMqtt = HydroBoxEnvironment.current.legacyMqtt
-        if (legacyMqtt.enabled) {
-            HydroMqtt.host = legacyMqtt.host
-            HydroMqtt.port = legacyMqtt.port
-            HydroMqtt.user = legacyMqtt.username
-            HydroMqtt.pass = legacyMqtt.password
-            HydroMqtt.connect()
-        }
 
         setContent {
             val darkState = rememberSaveable { mutableStateOf(true) }
@@ -48,12 +36,6 @@ class MainActivity : ComponentActivity() {
                 }
             }
         }
-    }
-
-    override fun onDestroy() {
-        // === MQTT: desconecta limpio ===
-        HydroMqtt.disconnect()
-        super.onDestroy()
     }
 }
 

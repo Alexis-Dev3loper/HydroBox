@@ -176,7 +176,13 @@ private fun MainScaffold(
                 composable(Route.Sensors.path)   {
                     SensorsScreen(paddingValues = PaddingValues(), api = authVM.domainApi)
                 }
-                composable(Route.Actuators.path) { ActuatorsScreen(paddingValues = PaddingValues()) }
+                composable(Route.Actuators.path) {
+                    ActuatorsScreen(
+                        paddingValues = PaddingValues(),
+                        api = authVM.domainApi,
+                        scopes = auth.scopes
+                    )
+                }
                 composable(Route.History.path)   {
                     HistoryScreen(paddingValues = PaddingValues(), api = authVM.domainApi)
                 }

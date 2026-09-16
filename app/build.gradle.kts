@@ -28,32 +28,6 @@ val hydroboxApiBaseUrl = hydroboxSetting(
     "HYDROBOX_MOBILE_API_BASE_URL",
     "https://api.example.invalid/api/v1"
 )
-val hydroboxMqttEnabled = hydroboxSetting(
-    "hydrobox.mqttEnabled",
-    "HYDROBOX_MOBILE_MQTT_ENABLED",
-    "false"
-).equals("true", ignoreCase = true)
-val hydroboxMqttHost = hydroboxSetting(
-    "hydrobox.mqttHost",
-    "HYDROBOX_MOBILE_MQTT_HOST",
-    "mqtt.example.invalid"
-)
-val hydroboxMqttPort = hydroboxSetting(
-    "hydrobox.mqttPort",
-    "HYDROBOX_MOBILE_MQTT_PORT",
-    "1883"
-).toIntOrNull()?.takeIf { it in 1..65535 } ?: 1883
-val hydroboxMqttUsername = hydroboxSetting(
-    "hydrobox.mqttUsername",
-    "HYDROBOX_MOBILE_MQTT_USERNAME",
-    ""
-)
-val hydroboxMqttPassword = hydroboxSetting(
-    "hydrobox.mqttPassword",
-    "HYDROBOX_MOBILE_MQTT_PASSWORD",
-    ""
-)
-
 android {
     namespace = "com.hydrobox.app"
     compileSdk = 36
@@ -66,20 +40,11 @@ android {
         versionName = "0.1.0"
         testInstrumentationRunner = "androidx.test.runner.AndroidJUnitRunner"
         buildConfigField("String", "HYDROBOX_API_BASE_URL", hydroboxApiBaseUrl.asBuildConfigString())
-        buildConfigField("boolean", "HYDROBOX_MQTT_ENABLED", hydroboxMqttEnabled.toString())
-        buildConfigField("String", "HYDROBOX_MQTT_HOST", hydroboxMqttHost.asBuildConfigString())
-        buildConfigField("int", "HYDROBOX_MQTT_PORT", hydroboxMqttPort.toString())
-        buildConfigField("String", "HYDROBOX_MQTT_USERNAME", hydroboxMqttUsername.asBuildConfigString())
-        buildConfigField("String", "HYDROBOX_MQTT_PASSWORD", hydroboxMqttPassword.asBuildConfigString())
     }
 
     buildTypes {
         release {
             isMinifyEnabled = true
-            // Direct MQTT is legacy. A release cannot enable it or embed its credentials.
-            buildConfigField("boolean", "HYDROBOX_MQTT_ENABLED", "false")
-            buildConfigField("String", "HYDROBOX_MQTT_USERNAME", "\"\"")
-            buildConfigField("String", "HYDROBOX_MQTT_PASSWORD", "\"\"")
             proguardFiles(
                 getDefaultProguardFile("proguard-android-optimize.txt"),
                 "proguard-rules.pro"
@@ -96,9 +61,7 @@ android {
                 "META-INF/LICENSE",
                 "META-INF/LICENSE.txt",
                 "META-INF/NOTICE",
-                "META-INF/NOTICE.txt",
-                // a veces también aparece con HiveMQ/Netty:
-                "META-INF/io.netty.versions.properties"
+                "META-INF/NOTICE.txt"
             )
             // (opcional) en vez de excluir, podrías hacer pickFirst; no uses ambas para el mismo archivo
             // pickFirsts += setOf("META-INF/INDEX.LIST")
@@ -141,9 +104,6 @@ dependencies {
     ksp(libs.androidx.room.compiler)
 
     implementation(libs.androidx.datastore.preferences)
-
-    // HiveMQ MQTT v1.3.10 desde el version catalog
-    implementation(libs.hivemq.mqtt.client)
 
     testImplementation(libs.junit)
     testImplementation(libs.sqlite.jdbc)
