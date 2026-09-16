@@ -120,8 +120,8 @@ no requiere ni autoriza broker, API, hardware o credenciales reales.
 
 ## Deuda priorizada
 
-1. **MB-006 P1:** publicar y verificar la implementación local de cache/offline.
-2. **MB-007+**: UX integrada, cámara y hardening final.
+1. **MB-007 P2:** Automation, alertas, health e historial con estados reales.
+2. **MB-008+**: cámara segura y hardening final.
 3. **CI:** migrar las Actions que aún apuntan a `setup-java@v4`/Node 20.
 
 MB-002 quedó publicado hasta `54f28c3` y la matriz Android completa pasó en CI
@@ -133,6 +133,7 @@ MB-004 está publicado en `2f8907f`–`92c9862`; CI `35081160677` valida
 MB-005 está publicado en `64d5566`–`1a1c594`: 46 tests en source,
 unidades/duraciones API, cero/missing, freshness y hora local. CI `35131675188`
 valida `testDebugUnitTest`, `lintDebug` y `assembleDebug`; Mobile #6 está cerrada.
-MB-006 está implementado localmente en `b6e5be7`–`0348994`: 55 tests en source,
+MB-006 está publicado y verificado en `b6e5be7`–`6700725`: 55 tests en source,
 cache network-first persistente y scoped, sesión offline read-only, backoff,
-invalidación y estado visible; falta publicación/CI y Mobile #7 sigue abierta.
+invalidación y estado visible. CI `35138093458` valida `testDebugUnitTest`,
+`lintDebug` y `assembleDebug`; Mobile #7 está cerrada y MB-007 es la fase actual.

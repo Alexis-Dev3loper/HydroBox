@@ -2,7 +2,7 @@
 
 Actualizado: **2026-09-16**.
 
-Estado: **IMPLEMENTADO LOCALMENTE / VERIFICACIÓN CI Y PUBLICACIÓN PENDIENTES**.
+Estado: **IMPLEMENTADO / VERIFICADO / PUBLICADO**.
 
 ## Auditoría del estado heredado
 
@@ -85,8 +85,11 @@ Estado: **IMPLEMENTADO LOCALMENTE / VERIFICACIÓN CI Y PUBLICACIÓN PENDIENTES**
 - `0348994`: banners live/cache/stale/no-disponible en las cinco pantallas de
   dominio y bloqueo de permisos de escritura mientras la sesión está offline/no
   verificada.
+- `6700725`: checkpoint documental publicado.
 - El source suma **55 tests**, incluidos restart, corrupción, límite/pruning,
   aislamiento, fresh/stale/expired, cancelación, `401`, invalidación y ausencia
   de fallback para intents físicos.
-- `git diff --check` pasa. El host no contiene JDK/Android SDK; quedan pendientes
-  `testDebugUnitTest`, `lintDebug` y `assembleDebug` en CI posterior al push.
+- CI `35138093458`, job `104935431777`, ejecuta
+  `testDebugUnitTest lintDebug assembleDebug`: `BUILD SUCCESSFUL`, 58 tareas.
+- `git diff --check` pasa; Mobile #7 está cerrada. Las advertencias heredadas de
+  Actions sobre Node 20 y `setup-java@v4` quedan como deuda no bloqueante.

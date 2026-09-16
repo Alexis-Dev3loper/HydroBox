@@ -24,10 +24,11 @@ Este repositorio es la aplicación Android de HydroBox. En el workspace completo
   duraciones/unidades inventadas, usa tiempo local/freshness explícita y
   conserva cero frente a missing. La CI `35131675188` pasa tests, lint y
   assemble; Mobile #6 está cerrada.
-- MB-006 está implementado localmente en `b6e5be7`–`0348994`: cache GET
+- MB-006 está publicado y verificado en `b6e5be7`–`6700725`: cache GET
   network-first aislado por usuario/sitio, restore offline read-only, backoff,
   invalidación y estados live/cache/stale visibles. Suma 55 tests en source;
-  push/CI y cierre de Mobile #7 están pendientes.
+  CI `35138093458` pasa tests, lint y assemble; Mobile #7 está cerrada. La fase
+  actual es MB-007.
 - Room v4 elimina irreversiblemente `passwordPlain`; access/refresh tokens solo
   se guardan cifrados con una clave Android Keystore y quedan fuera de backups.
 - MB-001 validó CI reproducible con JDK 17/SDK 36. MB-002 quedó publicado y
