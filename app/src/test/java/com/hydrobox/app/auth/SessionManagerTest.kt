@@ -48,6 +48,8 @@ class SessionManagerTest {
         assertEquals(api.issued, vault.value?.tokens)
         assertEquals(42L, manager.state.value.userId)
         assertTrue(manager.state.value.isLoggedIn)
+        assertEquals(listOf("university-lab"), manager.state.value.siteKeys)
+        assertEquals(setOf("profile:read"), manager.state.value.scopes)
     }
 
     @Test
@@ -230,9 +232,40 @@ class SessionManagerTest {
         assertNull(vault.value)
     }
 
+    @Test
+    fun invalidationClearsTokensAndDomainContext() = runBlocking {
+        val api = FakeAuthApi(now, principal)
+        val vault = FakeVault()
+        val manager = SessionManager(api, vault) { now }
+        assertTrue(manager.login(principal.email, "one-time-input", "test-device", true) { 7L })
+
+        manager.invalidate()
+
+        assertNull(vault.value)
+        assertFalse(manager.state.value.isLoggedIn)
+        assertTrue(manager.state.value.siteKeys.isEmpty())
+        assertTrue(manager.state.value.scopes.isEmpty())
+    }
+
+    @Test
+    fun invalidationClearsDomainContextEvenWhenSecureStorageFails() = runBlocking {
+        val api = FakeAuthApi(now, principal)
+        val vault = FakeVault()
+        val manager = SessionManager(api, vault) { now }
+        assertTrue(manager.login(principal.email, "one-time-input", "test-device", true) { 7L })
+        vault.failClears = true
+
+        runCatching { manager.invalidate() }
+
+        assertFalse(manager.state.value.isLoggedIn)
+        assertTrue(manager.state.value.siteKeys.isEmpty())
+        assertTrue(manager.state.value.scopes.isEmpty())
+    }
+
     private class FakeVault(initial: StoredSession? = null) : SessionVault {
         var value: StoredSession? = initial
         var failWrites = false
+        var failClears = false
 
         override suspend fun read(): StoredSession? = value
 
@@ -242,6 +275,7 @@ class SessionManagerTest {
         }
 
         override suspend fun clear() {
+            if (failClears) throw IOException("storage unavailable")
             value = null
         }
     }

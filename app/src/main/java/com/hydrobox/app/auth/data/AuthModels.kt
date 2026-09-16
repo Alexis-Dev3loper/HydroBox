@@ -18,5 +18,7 @@ data class UserEntity(
 
 data class AuthState(
     val isLoggedIn: Boolean = false,
-    val userId: Long? = null
+    val userId: Long? = null,
+    val siteKeys: List<String> = emptyList(),
+    val scopes: Set<String> = emptySet()
 )

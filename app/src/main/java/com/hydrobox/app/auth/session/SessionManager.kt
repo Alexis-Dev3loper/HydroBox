@@ -33,7 +33,7 @@ class SessionManager(
             val localUserId = persistPrincipal(principal)
             val session = StoredSession(localUserId, persistent, pair)
             vault.write(session)
-            mutableState.value = AuthState(isLoggedIn = true, userId = localUserId)
+            mutableState.value = authenticatedState(localUserId, principal)
             true
         } catch (cancelled: CancellationException) {
             throw cancelled
@@ -62,7 +62,7 @@ class SessionManager(
             if (localUserId != usable.localUserId) {
                 vault.write(usable.copy(localUserId = localUserId))
             }
-            mutableState.value = AuthState(isLoggedIn = true, userId = localUserId)
+            mutableState.value = authenticatedState(localUserId, principal)
             true
         } catch (error: AuthApiException) {
             if (error.isTerminal) clearAndLogOut()
@@ -77,8 +77,19 @@ class SessionManager(
     suspend fun accessToken(): String? = mutex.withLock {
         val stored = vault.read() ?: return@withLock null
         val usable = ensureFresh(stored) ?: return@withLock null
-        mutableState.value = AuthState(isLoggedIn = true, userId = usable.localUserId)
+        mutableState.value = mutableState.value.copy(
+            isLoggedIn = true,
+            userId = usable.localUserId
+        )
         usable.tokens.accessToken
+    }
+
+    suspend fun invalidate() = mutex.withLock {
+        try {
+            vault.clear()
+        } finally {
+            loggedOut()
+        }
     }
 
     suspend fun logout() = mutex.withLock {
@@ -152,6 +163,13 @@ class SessionManager(
         mutableState.value = AuthState()
         return false
     }
+
+    private fun authenticatedState(localUserId: Long, principal: HumanPrincipal) = AuthState(
+        isLoggedIn = true,
+        userId = localUserId,
+        siteKeys = principal.siteKeys.distinct(),
+        scopes = principal.scopes.toSet()
+    )
 
     private suspend fun clearAndLogOut(): Boolean {
         vault.clear()
