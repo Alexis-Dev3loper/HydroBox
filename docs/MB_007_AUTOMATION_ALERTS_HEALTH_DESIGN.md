@@ -1,8 +1,8 @@
 # MB-007 — Automation, alertas, health e historial
 
-Actualizado: **2026-09-16**.
+Actualizado: **2026-09-22**.
 
-Estado: **DISEÑO FUNCIONAL COMPLETO / SLICE A IMPLEMENTADO LOCALMENTE / CI PENDIENTE**.
+Estado: **DISEÑO FUNCIONAL COMPLETO / SLICE A VERIFICADO / SLICE B IMPLEMENTADO LOCALMENTE**.
 
 ## Evidencia del estado real
 
@@ -10,7 +10,8 @@ Estado: **DISEÑO FUNCIONAL COMPLETO / SLICE A IMPLEMENTADO LOCALMENTE / CI PEND
 - `HistoryScreen` obtiene telemetría real, pero su bloque «Eventos» contiene
   cuatro ejemplos hardcodeados que no deben presentarse como historial real.
 - `NotificationScreen` solo muestra «Sistema de Notificaciones (demo)».
-- Mobile todavía no tiene modelos, cliente ni pantalla de Automation.
+- Mobile tiene cliente Automation publicado/verificado y una primera pantalla
+  local pendiente de CI; edición versionada e historial todavía faltan.
 - Web implementa y prueba CRUD/versionado de `/automations` y lectura de
   `/automation-executions`; creación usa idempotencia y toda mutación posterior
   exige `If-Match` fuerte con la versión vigente.
@@ -25,7 +26,7 @@ Estado: **DISEÑO FUNCIONAL COMPLETO / SLICE A IMPLEMENTADO LOCALMENTE / CI PEND
 
 - DTOs estrictos para reglas, acciones, schedules y ejecuciones.
 - Listado paginado/cacheable de reglas y ejecuciones.
-- Creación idempotente siempre deshabilitada, como exige el servidor.
+- Creación idempotente; toda regla nueva queda deshabilitada, como exige el servidor.
 - Edición, habilitar/pausar y borrado con `If-Match` derivado de `version`.
 - Invalidación de cache posterior a mutaciones aceptadas.
 - Ningún estado `dispatched` se presenta como ACK físico.
@@ -76,8 +77,24 @@ disponible y nunca fixtures/demo como datos reales.
 - Tres pruebas nuevas cubren parsing/paginación, create→patch→delete, headers,
   payload reducido y rechazo de action/timezone/status inválidos.
 - El source suma **58 tests** y `git diff --check` pasa.
-- El host no dispone de Java/JDK; compilación, tests, lint y assemble quedan
-  pendientes de CI posterior al push autorizado.
+- CI `35811253177` ejecutó satisfactoriamente `testDebugUnitTest`, `lintDebug` y
+  `assembleDebug` sobre `16fbf50`; Slice A está publicado y verificado.
+
+## Evidencia local del Slice B
+
+- `4143d75` añade `AutomationScreen` al menú lateral sin desplazar las cinco
+  pestañas principales.
+- La lectura exige `automation:read`; el cache puede consultarse offline, pero
+  crear, activar, pausar y borrar exigen sesión online y `automation:write`.
+- La creación solicita solo nombre, acción/objetivo y calendario; deriva UUID,
+  idempotencia, zona local y grace, y conserva la regla pausada hasta una acción
+  versionada explícita.
+- Las tarjetas separan estado activo/pausado, versión, calendario y próxima
+  ejecución; un 412 fuerza recarga antes de reintentar.
+- Cuatro pruebas puras cubren zona horaria, grace, mapeo nutriente→actuador y
+  validaciones negativas. El source suma **62 tests**.
+- El host continúa sin Java/JDK; commit, `git diff --check` y revisión estática
+  están completos, pero test/lint/assemble requieren push autorizado y CI.
 
 ## Fuera de alcance
 
