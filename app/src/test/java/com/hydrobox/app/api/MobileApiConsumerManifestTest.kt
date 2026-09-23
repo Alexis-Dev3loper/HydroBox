@@ -4,8 +4,7 @@ import org.json.JSONObject
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertTrue
 import org.junit.Test
-import java.nio.file.Files
-import java.nio.file.Path
+import java.io.File
 
 class MobileApiConsumerManifestTest {
     private data class ExpectedOperation(
@@ -19,10 +18,8 @@ class MobileApiConsumerManifestTest {
 
     @Test
     fun manifestMatchesTheCompleteImplementedMobileApiSurface() {
-        val root = Path.of("").toAbsolutePath()
-        val manifest = JSONObject(
-            Files.readString(root.resolve("docs/api/v1/mobile_v1_operations.json"))
-        )
+        val root = File("").absoluteFile
+        val manifest = JSONObject(manifestFile(root).readText())
         val actual = manifest.getJSONArray("operations").let { operations ->
             (0 until operations.length()).associate { index ->
                 val operation = operations.getJSONObject(index)
@@ -48,16 +45,14 @@ class MobileApiConsumerManifestTest {
                 }
             )
 
-            val source = Files.readString(root.resolve(expected.sourceFile))
+            val source = File(root, expected.sourceFile).readText()
             assertTrue("$id source anchor missing", source.contains(expected.sourceAnchor))
         }
     }
 
     @Test
     fun manifestDoesNotClaimDomainsThatAreStillUnavailable() {
-        val text = Files.readString(
-            Path.of("docs/api/v1/mobile_v1_operations.json").toAbsolutePath()
-        )
+        val text = manifestFile(File("").absoluteFile).readText()
 
         assertTrue("alerts must remain outside the implemented consumer manifest", !text.contains("alert."))
         assertTrue("physical health must remain outside the manifest", !text.contains("health."))
@@ -65,10 +60,13 @@ class MobileApiConsumerManifestTest {
     }
 
     companion object {
+        private fun manifestFile(moduleRoot: File) =
+            File(moduleRoot, "../docs/api/v1/mobile_v1_operations.json").canonicalFile
+
         private const val AUTH_SOURCE =
-            "app/src/main/java/com/hydrobox/app/auth/session/HttpHumanAuthApi.kt"
+            "src/main/java/com/hydrobox/app/auth/session/HttpHumanAuthApi.kt"
         private const val DOMAIN_SOURCE =
-            "app/src/main/java/com/hydrobox/app/api/HttpHydroDomainApi.kt"
+            "src/main/java/com/hydrobox/app/api/HttpHydroDomainApi.kt"
 
         private fun auth(
             method: String,
