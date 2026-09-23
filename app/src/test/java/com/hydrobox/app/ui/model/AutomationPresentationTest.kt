@@ -1,6 +1,8 @@
 package com.hydrobox.app.ui.model
 
 import com.hydrobox.app.api.ApiAutomationAction
+import com.hydrobox.app.api.ApiAutomation
+import com.hydrobox.app.api.ApiAutomationExecution
 import com.hydrobox.app.api.ApiAutomationSchedule
 import org.junit.Assert.assertEquals
 import org.junit.Assert.assertThrows
@@ -102,6 +104,51 @@ class AutomationPresentationTest {
             )
         }
         assertTrue(noDays.message!!.contains("día"))
+    }
+
+    @Test
+    fun existingRuleRoundTripsIntoEditableInput() {
+        val automation = ApiAutomation(
+            ruleUuid = "11111111-1111-4111-8111-111111111111",
+            version = 3,
+            name = "Dosis",
+            action = ApiAutomationAction.NutrientDose("flora_grow_pump", "flora_grow", 12.5),
+            schedule = ApiAutomationSchedule.Weekdays(
+                "06:30:00",
+                "America/Mexico_City",
+                listOf(1, 3, 5),
+                30
+            ),
+            enabled = true,
+            deletedAt = null,
+            nextRunAt = null,
+            updatedAt = Instant.parse("2026-09-22T00:00:00Z")
+        )
+
+        val input = automationDraftInput(automation)
+
+        assertEquals(AutomationActionChoice.NUTRIENT_DOSE, input.actionChoice)
+        assertEquals("flora_grow", input.nutrientKey)
+        assertEquals("flora_grow_pump", input.nutrientActuatorKey)
+        assertEquals("12.5", input.amountMl)
+        assertEquals(AutomationScheduleChoice.WEEKDAYS, input.scheduleChoice)
+        assertEquals(setOf(1, 3, 5), input.isoWeekdays)
+    }
+
+    @Test
+    fun dispatchedExecutionNeverClaimsPhysicalAck() {
+        val label = automationExecutionStatusLabel(
+            ApiAutomationExecution(
+                executionUuid = "22222222-2222-4222-8222-222222222222",
+                ruleUuid = "11111111-1111-4111-8111-111111111111",
+                scheduledFor = Instant.parse("2026-09-22T00:00:00Z"),
+                statusKey = "dispatched",
+                commandUuid = "33333333-3333-4333-8333-333333333333",
+                errorMessage = null
+            )
+        )
+
+        assertTrue(label.contains("ACK físico pendiente"))
     }
 
     private fun baseInput(

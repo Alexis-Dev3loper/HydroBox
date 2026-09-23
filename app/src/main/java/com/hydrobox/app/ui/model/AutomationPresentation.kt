@@ -3,6 +3,7 @@ package com.hydrobox.app.ui.model
 import com.hydrobox.app.api.ApiAutomation
 import com.hydrobox.app.api.ApiAutomationAction
 import com.hydrobox.app.api.ApiAutomationDraft
+import com.hydrobox.app.api.ApiAutomationExecution
 import com.hydrobox.app.api.ApiAutomationSchedule
 import java.time.LocalDate
 import java.time.LocalDateTime
@@ -105,6 +106,76 @@ fun buildAutomationDraft(
     return ApiAutomationDraft(name = name, action = action, schedule = schedule)
 }
 
+fun automationDraftInput(automation: ApiAutomation): AutomationDraftInput {
+    val (actionChoice, actuatorKey, targetState, durationSeconds, nutrientKey,
+        nutrientActuatorKey, amountMl) = when (val action = automation.action) {
+        is ApiAutomationAction.SetState -> ActionInput(
+            AutomationActionChoice.SET_STATE,
+            action.actuatorKey,
+            action.targetState,
+            "60",
+            null,
+            null,
+            "10"
+        )
+        is ApiAutomationAction.RunFor -> ActionInput(
+            AutomationActionChoice.RUN_FOR,
+            action.actuatorKey,
+            true,
+            action.durationSeconds.toString(),
+            null,
+            null,
+            "10"
+        )
+        is ApiAutomationAction.NutrientDose -> ActionInput(
+            AutomationActionChoice.NUTRIENT_DOSE,
+            null,
+            true,
+            "60",
+            action.nutrientKey,
+            action.actuatorKey,
+            formatAutomationNumber(action.amountMl)
+        )
+    }
+    val (scheduleChoice, date, time, weekdays) = when (val schedule = automation.schedule) {
+        is ApiAutomationSchedule.Once -> {
+            val local = schedule.onceAt.atZone(ZoneId.systemDefault())
+            ScheduleInput(
+                AutomationScheduleChoice.ONCE,
+                local.toLocalDate().toString(),
+                local.toLocalTime().format(DateTimeFormatter.ofPattern("HH:mm")),
+                emptySet()
+            )
+        }
+        is ApiAutomationSchedule.Daily -> ScheduleInput(
+            AutomationScheduleChoice.DAILY,
+            LocalDate.now().plusDays(1).toString(),
+            schedule.timeOfDay.take(5),
+            emptySet()
+        )
+        is ApiAutomationSchedule.Weekdays -> ScheduleInput(
+            AutomationScheduleChoice.WEEKDAYS,
+            LocalDate.now().plusDays(1).toString(),
+            schedule.timeOfDay.take(5),
+            schedule.isoWeekdays.toSet()
+        )
+    }
+    return AutomationDraftInput(
+        name = automation.name,
+        actionChoice = actionChoice,
+        actuatorKey = actuatorKey,
+        targetState = targetState,
+        durationSeconds = durationSeconds,
+        nutrientKey = nutrientKey,
+        nutrientActuatorKey = nutrientActuatorKey,
+        amountMl = amountMl,
+        scheduleChoice = scheduleChoice,
+        date = date,
+        time = time,
+        isoWeekdays = weekdays
+    )
+}
+
 fun automationActionLabel(
     action: ApiAutomationAction,
     actuatorNames: Map<String, String> = emptyMap(),
@@ -140,6 +211,15 @@ fun automationNextRunLabel(automation: ApiAutomation): String =
         ?.let { "Próxima ejecución: $it" }
         ?: "Sin próxima ejecución calculada"
 
+fun automationExecutionStatusLabel(execution: ApiAutomationExecution): String =
+    when (execution.statusKey) {
+        "running" -> "En curso"
+        "dispatched" -> "Comando registrado · ACK físico pendiente"
+        "skipped" -> "Omitida"
+        "failed" -> "Fallida"
+        else -> "Estado no reconocido"
+    }
+
 private fun String?.requireSelection(message: String): String =
     this?.trim()?.takeIf(String::isNotEmpty) ?: throw IllegalArgumentException(message)
 
@@ -163,4 +243,21 @@ private val ISO_DAY_LABELS = mapOf(
     5 to "Vie",
     6 to "Sáb",
     7 to "Dom"
+)
+
+private data class ActionInput(
+    val actionChoice: AutomationActionChoice,
+    val actuatorKey: String?,
+    val targetState: Boolean,
+    val durationSeconds: String,
+    val nutrientKey: String?,
+    val nutrientActuatorKey: String?,
+    val amountMl: String
+)
+
+private data class ScheduleInput(
+    val scheduleChoice: AutomationScheduleChoice,
+    val date: String,
+    val time: String,
+    val weekdays: Set<Int>
 )

@@ -21,6 +21,7 @@ import androidx.compose.foundation.verticalScroll
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Add
 import androidx.compose.material.icons.filled.Delete
+import androidx.compose.material.icons.filled.Edit
 import androidx.compose.material.icons.filled.Pause
 import androidx.compose.material.icons.filled.PlayArrow
 import androidx.compose.material.icons.filled.Refresh
@@ -60,6 +61,7 @@ import androidx.compose.ui.unit.dp
 import com.hydrobox.app.api.ApiActuator
 import com.hydrobox.app.api.ApiAutomation
 import com.hydrobox.app.api.ApiAutomationDraft
+import com.hydrobox.app.api.ApiAutomationExecution
 import com.hydrobox.app.api.ApiNutrient
 import com.hydrobox.app.api.DomainApiException
 import com.hydrobox.app.api.HydroDomainApi
@@ -68,9 +70,12 @@ import com.hydrobox.app.ui.model.AutomationActionChoice
 import com.hydrobox.app.ui.model.AutomationDraftInput
 import com.hydrobox.app.ui.model.AutomationScheduleChoice
 import com.hydrobox.app.ui.model.automationActionLabel
+import com.hydrobox.app.ui.model.automationDraftInput
+import com.hydrobox.app.ui.model.automationExecutionStatusLabel
 import com.hydrobox.app.ui.model.automationNextRunLabel
 import com.hydrobox.app.ui.model.automationScheduleLabel
 import com.hydrobox.app.ui.model.buildAutomationDraft
+import com.hydrobox.app.ui.model.formatLocalTimestamp
 import kotlinx.coroutines.CancellationException
 import kotlinx.coroutines.launch
 import java.time.LocalDate
@@ -85,6 +90,7 @@ fun AutomationScreen(
     offlineMode: Boolean
 ) {
     var automations by remember { mutableStateOf<List<ApiAutomation>>(emptyList()) }
+    var executions by remember { mutableStateOf<List<ApiAutomationExecution>>(emptyList()) }
     var actuators by remember { mutableStateOf<List<ApiActuator>>(emptyList()) }
     var nutrients by remember { mutableStateOf<List<ApiNutrient>>(emptyList()) }
     var loading by remember { mutableStateOf(canRead) }
@@ -93,6 +99,7 @@ fun AutomationScreen(
     var refresh by remember { mutableIntStateOf(0) }
     var busyRules by remember { mutableStateOf<Set<String>>(emptySet()) }
     var showCreate by remember { mutableStateOf(false) }
+    var editTarget by remember { mutableStateOf<ApiAutomation?>(null) }
     var creating by remember { mutableStateOf(false) }
     var deleteTarget by remember { mutableStateOf<ApiAutomation?>(null) }
     val scope = rememberCoroutineScope()
@@ -106,6 +113,7 @@ fun AutomationScreen(
         loadError = null
         try {
             automations = api.automations(limit = 100).items.filter { it.deletedAt == null }
+            executions = api.automationExecutions(limit = 100).items
             actuators = api.actuators().filter(ApiActuator::active)
             nutrients = api.nutrients().filter(ApiNutrient::active)
         } catch (cancelled: CancellationException) {
@@ -226,7 +234,32 @@ fun AutomationScreen(
                             busy = rule.ruleUuid in busyRules,
                             canWrite = canWrite && !offlineMode,
                             onToggle = { mutate(rule, !rule.enabled) },
+                            onEdit = { editTarget = rule },
                             onDelete = { deleteTarget = rule }
+                        )
+                    }
+                }
+                item {
+                    Text(
+                        "Ejecuciones recientes",
+                        style = MaterialTheme.typography.titleLarge,
+                        fontWeight = FontWeight.SemiBold
+                    )
+                }
+                if (executions.isEmpty()) {
+                    item {
+                        AutomationUnavailableState(
+                            title = "Sin ejecuciones",
+                            detail = "Aún no hay ejecuciones reales registradas para estas reglas."
+                        )
+                    }
+                } else {
+                    items(executions, key = ApiAutomationExecution::executionUuid) { execution ->
+                        AutomationExecutionCard(
+                            execution = execution,
+                            ruleName = automations.firstOrNull {
+                                it.ruleUuid == execution.ruleUuid
+                            }?.name
                         )
                     }
                 }
@@ -240,9 +273,10 @@ fun AutomationScreen(
             onDismissRequest = { if (!creating) showCreate = false },
             sheetState = sheetState
         ) {
-            AutomationCreateForm(
+            AutomationEditorForm(
                 actuators = actuators,
                 nutrients = nutrients,
+                initial = null,
                 busy = creating,
                 onClose = { showCreate = false },
                 onSubmit = { draft ->
@@ -260,6 +294,50 @@ fun AutomationScreen(
                             operationMessage = automationMutationMessage(error)
                         } finally {
                             creating = false
+                        }
+                    }
+                }
+            )
+        }
+    }
+
+    editTarget?.let { rule ->
+        val sheetState = rememberModalBottomSheetState(skipPartiallyExpanded = true)
+        ModalBottomSheet(
+            onDismissRequest = { if (rule.ruleUuid !in busyRules) editTarget = null },
+            sheetState = sheetState
+        ) {
+            AutomationEditorForm(
+                actuators = actuators,
+                nutrients = nutrients,
+                initial = automationDraftInput(rule),
+                busy = rule.ruleUuid in busyRules,
+                onClose = { editTarget = null },
+                onSubmit = { draft ->
+                    scope.launch {
+                        busyRules = busyRules + rule.ruleUuid
+                        operationMessage = null
+                        try {
+                            val updated = api.updateAutomation(
+                                ruleUuid = rule.ruleUuid,
+                                version = rule.version,
+                                name = draft.name,
+                                action = draft.action,
+                                schedule = draft.schedule
+                            )
+                            automations = automations.map {
+                                if (it.ruleUuid == updated.ruleUuid) updated else it
+                            }
+                            operationMessage = "Automatización actualizada."
+                            editTarget = null
+                        } catch (cancelled: CancellationException) {
+                            throw cancelled
+                        } catch (error: Exception) {
+                            operationMessage = automationMutationMessage(error)
+                            editTarget = null
+                            if (error.isVersionConflict()) refresh += 1
+                        } finally {
+                            busyRules = busyRules - rule.ruleUuid
                         }
                     }
                 }
@@ -315,6 +393,7 @@ private fun AutomationCard(
     busy: Boolean,
     canWrite: Boolean,
     onToggle: () -> Unit,
+    onEdit: () -> Unit,
     onDelete: () -> Unit
 ) {
     Card(
@@ -376,8 +455,25 @@ private fun AutomationCard(
                     Spacer(Modifier.width(6.dp))
                     Text(if (automation.enabled) "Pausar" else "Activar")
                 }
-                OutlinedButton(onClick = onDelete, enabled = canWrite && !busy) {
-                    Icon(Icons.Filled.Delete, contentDescription = "Eliminar")
+            }
+            Row(horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                OutlinedButton(
+                    onClick = onEdit,
+                    enabled = canWrite && !busy,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Filled.Edit, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Editar")
+                }
+                OutlinedButton(
+                    onClick = onDelete,
+                    enabled = canWrite && !busy,
+                    modifier = Modifier.weight(1f)
+                ) {
+                    Icon(Icons.Filled.Delete, contentDescription = null)
+                    Spacer(Modifier.width(6.dp))
+                    Text("Eliminar")
                 }
             }
             if (!canWrite) {
@@ -392,24 +488,73 @@ private fun AutomationCard(
 }
 
 @Composable
-private fun AutomationCreateForm(
+private fun AutomationExecutionCard(execution: ApiAutomationExecution, ruleName: String?) {
+    Card(
+        modifier = Modifier.fillMaxWidth(),
+        colors = CardDefaults.cardColors(containerColor = MaterialTheme.colorScheme.surfaceVariant),
+        shape = RoundedCornerShape(16.dp)
+    ) {
+        Column(
+            Modifier.padding(14.dp),
+            verticalArrangement = Arrangement.spacedBy(4.dp)
+        ) {
+            Text(
+                ruleName ?: "Regla ${execution.ruleUuid.take(8)}",
+                style = MaterialTheme.typography.titleSmall,
+                fontWeight = FontWeight.SemiBold
+            )
+            Text(
+                automationExecutionStatusLabel(execution),
+                color = if (execution.statusKey == "failed") {
+                    MaterialTheme.colorScheme.error
+                } else {
+                    MaterialTheme.colorScheme.primary
+                }
+            )
+            Text(
+                formatLocalTimestamp(execution.scheduledFor, includeDate = true),
+                style = MaterialTheme.typography.bodySmall,
+                color = MaterialTheme.colorScheme.onSurfaceVariant
+            )
+            execution.errorMessage?.let { message ->
+                Text(message, style = MaterialTheme.typography.bodySmall, color = MaterialTheme.colorScheme.error)
+            }
+        }
+    }
+}
+
+@Composable
+private fun AutomationEditorForm(
     actuators: List<ApiActuator>,
     nutrients: List<ApiNutrient>,
+    initial: AutomationDraftInput?,
     busy: Boolean,
     onClose: () -> Unit,
     onSubmit: (ApiAutomationDraft) -> Unit
 ) {
-    var name by remember { mutableStateOf("") }
-    var actionChoice by remember { mutableStateOf(AutomationActionChoice.SET_STATE) }
-    var actuatorKey by remember(actuators) { mutableStateOf(actuators.firstOrNull()?.actuatorKey) }
-    var targetState by remember { mutableStateOf(true) }
-    var durationSeconds by remember { mutableStateOf("60") }
-    var nutrientKey by remember(nutrients) { mutableStateOf(nutrients.firstOrNull()?.nutrientKey) }
-    var amountMl by remember { mutableStateOf("10") }
-    var scheduleChoice by remember { mutableStateOf(AutomationScheduleChoice.DAILY) }
-    var date by remember { mutableStateOf(LocalDate.now().plusDays(1).toString()) }
-    var time by remember { mutableStateOf("08:00") }
-    var weekdays by remember { mutableStateOf(setOf(1, 2, 3, 4, 5)) }
+    var name by remember(initial) { mutableStateOf(initial?.name.orEmpty()) }
+    var actionChoice by remember(initial) {
+        mutableStateOf(initial?.actionChoice ?: AutomationActionChoice.SET_STATE)
+    }
+    var actuatorKey by remember(initial, actuators) {
+        mutableStateOf(initial?.actuatorKey ?: actuators.firstOrNull()?.actuatorKey)
+    }
+    var targetState by remember(initial) { mutableStateOf(initial?.targetState ?: true) }
+    var durationSeconds by remember(initial) { mutableStateOf(initial?.durationSeconds ?: "60") }
+    var nutrientKey by remember(initial, nutrients) {
+        mutableStateOf(initial?.nutrientKey ?: nutrients.firstOrNull()?.nutrientKey)
+    }
+    var amountMl by remember(initial) { mutableStateOf(initial?.amountMl ?: "10") }
+    var scheduleChoice by remember(initial) {
+        mutableStateOf(initial?.scheduleChoice ?: AutomationScheduleChoice.DAILY)
+    }
+    var date by remember(initial) {
+        mutableStateOf(initial?.date ?: LocalDate.now().plusDays(1).toString())
+    }
+    var time by remember(initial) { mutableStateOf(initial?.time ?: "08:00") }
+    var weekdays by remember(initial) {
+        mutableStateOf(initial?.isoWeekdays ?: setOf(1, 2, 3, 4, 5))
+    }
     var validationError by remember { mutableStateOf<String?>(null) }
     val selectedNutrient = nutrients.firstOrNull { it.nutrientKey == nutrientKey }
 
@@ -421,12 +566,16 @@ private fun AutomationCreateForm(
         verticalArrangement = Arrangement.spacedBy(14.dp)
     ) {
         Text(
-            "Nueva automatización",
+            if (initial == null) "Nueva automatización" else "Editar automatización",
             style = MaterialTheme.typography.titleLarge,
             fontWeight = FontWeight.SemiBold
         )
         Text(
-            "La regla se crea pausada. Activarla es una acción posterior y no equivale a un ACK físico.",
+            if (initial == null) {
+                "La regla se crea pausada. Activarla es una acción posterior y no equivale a un ACK físico."
+            } else {
+                "Guardar usa la versión visible. Si otro cliente cambió la regla, se recargará antes de reintentar."
+            },
             color = MaterialTheme.colorScheme.onSurfaceVariant
         )
         OutlinedTextField(
@@ -569,7 +718,13 @@ private fun AutomationCreateForm(
                         validationError = error.message ?: "Revisa los datos ingresados."
                     }
                 }
-            ) { Text(if (busy) "Creando…" else "Crear pausada") }
+            ) {
+                Text(
+                    if (busy) "Guardando…"
+                    else if (initial == null) "Crear pausada"
+                    else "Guardar cambios"
+                )
+            }
             OutlinedButton(onClick = onClose, enabled = !busy) { Text("Cancelar") }
         }
         Spacer(Modifier.height(20.dp))
