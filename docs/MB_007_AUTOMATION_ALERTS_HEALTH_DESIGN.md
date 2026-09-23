@@ -2,7 +2,7 @@
 
 Actualizado: **2026-09-22**.
 
-Estado: **DISEÑO FUNCIONAL COMPLETO / SLICE A VERIFICADO / SLICE B IMPLEMENTADO LOCALMENTE**.
+Estado: **SLICES A–C IMPLEMENTADOS / BASE B VERIFICADA / CIERRE LOCAL PENDIENTE DE CI**.
 
 ## Evidencia del estado real
 
@@ -10,8 +10,8 @@ Estado: **DISEÑO FUNCIONAL COMPLETO / SLICE A VERIFICADO / SLICE B IMPLEMENTADO
 - `HistoryScreen` obtiene telemetría real, pero su bloque «Eventos» contiene
   cuatro ejemplos hardcodeados que no deben presentarse como historial real.
 - `NotificationScreen` solo muestra «Sistema de Notificaciones (demo)».
-- Mobile tiene cliente Automation publicado/verificado y una primera pantalla
-  local pendiente de CI; edición versionada e historial todavía faltan.
+- Mobile tiene cliente y pantalla base Automation publicados/verificados;
+  edición versionada e historial real están implementados localmente y pendientes de CI.
 - Web implementa y prueba CRUD/versionado de `/automations` y lectura de
   `/automation-executions`; creación usa idempotencia y toda mutación posterior
   exige `If-Match` fuerte con la versión vigente.
@@ -93,8 +93,26 @@ disponible y nunca fixtures/demo como datos reales.
   ejecución; un 412 fuerza recarga antes de reintentar.
 - Cuatro pruebas puras cubren zona horaria, grace, mapeo nutriente→actuador y
   validaciones negativas. El source suma **62 tests**.
-- El host continúa sin Java/JDK; commit, `git diff --check` y revisión estática
-  están completos, pero test/lint/assemble requieren push autorizado y CI.
+- El host continúa sin Java/JDK; cada ampliación posterior al checkpoint verde
+  requiere push autorizado y CI para test/lint/assemble.
+
+La base de Slice B quedó publicada en `4143d75`–`e61abdc`; CI `35813115448`
+pasó 62 tests, lint y assemble. `47fd766` completa localmente edición de
+nombre/acción/calendario con la versión visible y muestra ejecuciones reales;
+`dispatched` se presenta como ACK físico pendiente.
+
+## Evidencia local del Slice C
+
+- `907af45` elimina los cuatro eventos hardcodeados de `HistoryScreen`.
+- Historial mezcla únicamente commands y ejecuciones obtenidos con sus scopes;
+  `sent` y `dispatched` conservan ACK físico pendiente.
+- La lista se ordena por timestamps reales, usa nombres canónicos disponibles y
+  presenta un vacío explícito cuando no existen eventos.
+- `NotificationScreen` deja de anunciar una demo: explica que alertas/ACK no
+  están disponibles hasta HD-016 y no infiere alertas desde rangos.
+- Dos pruebas nuevas cubren orden/fuentes y `sent != acknowledged`. Con las dos
+  pruebas del editor, el source suma **66 tests**.
+- `47fd766` y `907af45` están revisados con `git diff --check`; requieren CI.
 
 ## Fuera de alcance
 

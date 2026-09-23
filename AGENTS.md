@@ -32,10 +32,13 @@ Este repositorio es la aplicación Android de HydroBox. En el workspace completo
 - MB-007 Slice A está publicado y verificado en `95f4e1a`–`16fbf50`: cliente
   Automation estricto, paginado, idempotente y versionado con `If-Match`, 204
   real y tres pruebas nuevas. CI `35811253177` pasa tests, lint y assemble.
-- MB-007 Slice B está implementado localmente en `4143d75`: pantalla reducida
-  de Automation con permisos, cache offline de solo lectura, creación pausada,
-  mutaciones versionadas, conflicto 412 y cuatro pruebas de presentación. El
-  source suma 62 tests; push/CI de este slice están pendientes.
+- MB-007 Slice B base está publicado y verificado en `4143d75`–`e61abdc`: CI
+  `35813115448` pasa 62 tests, lint y assemble. `47fd766` completa localmente
+  edición `If-Match` e historial de ejecuciones sin fake ACK.
+- MB-007 Slice C está implementado localmente en `907af45`: Historial sustituye
+  cuatro fixtures por commands/ejecuciones autorizados y Notificaciones declara
+  alertas no disponibles hasta HD-016. El source suma 66 tests; ambos commits
+  locales requieren push/CI.
 - Room v4 elimina irreversiblemente `passwordPlain`; access/refresh tokens solo
   se guardan cifrados con una clave Android Keystore y quedan fuera de backups.
 - MB-001 validó CI reproducible con JDK 17/SDK 36. MB-002 quedó publicado y
