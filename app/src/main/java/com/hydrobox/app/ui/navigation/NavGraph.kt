@@ -40,6 +40,7 @@ sealed class Route(val path: String) {
     data object Crops : Route("crops")
 
     data object Account : Route("account")
+    data object Automation : Route("automation")
     data object Settings : Route("settings")
     data object Notification : Route("notification")
 }
@@ -111,6 +112,7 @@ private fun MainScaffold(
                 HorizontalDivider(color = MaterialTheme.colorScheme.surfaceVariant)
                 DrawerContent(
                     onAccount      = { scope.launch { drawerState.close() }; nav.navigate(Route.Account.path) },
+                    onAutomation   = { navigateFromDrawer(nav, drawerState, Route.Automation.path, scope) },
                     onSettings     = { navigateFromDrawer(nav, drawerState, Route.Settings.path, scope) },
                     onNotification = { navigateFromDrawer(nav, drawerState, Route.Notification.path, scope) },
                     onOpenHydrobox  = { openExternal("https://hydrobox.pi.jademajesty.com/") },
@@ -194,6 +196,15 @@ private fun MainScaffold(
                     )
                 }
                 composable(Route.Account.path)   { AccountScreen(vm = authVM) }
+                composable(Route.Automation.path) {
+                    AutomationScreen(
+                        paddingValues = PaddingValues(),
+                        api = authVM.domainApi,
+                        canRead = "automation:read" in auth.scopes,
+                        canWrite = !auth.offlineMode && "automation:write" in auth.scopes,
+                        offlineMode = auth.offlineMode
+                    )
+                }
                 composable(Route.Settings.path)  { SettingsScreen() }
                 composable(Route.Notification.path) { NotificationScreen(paddingValues = PaddingValues()) }
             }
@@ -320,6 +331,7 @@ private fun DrawerHeader(
 @Composable
 private fun DrawerContent(
     onAccount: () -> Unit,
+    onAutomation: () -> Unit,
     onSettings: () -> Unit,
     onNotification: () -> Unit,
     onOpenHydrobox: () -> Unit,
@@ -330,6 +342,20 @@ private fun DrawerContent(
         selected = false,
         onClick = onAccount,
         icon = { Icon(Icons.Outlined.AccountCircle, null) },
+        colors = NavigationDrawerItemDefaults.colors(
+            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            unselectedTextColor = MaterialTheme.colorScheme.onSurface
+        ),
+        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+    )
+    NavigationDrawerItem(
+        label = { Text("Automatizaciones") },
+        selected = false,
+        onClick = onAutomation,
+        icon = { Icon(Icons.Outlined.Schedule, contentDescription = null) },
         colors = NavigationDrawerItemDefaults.colors(
             selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
             selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
