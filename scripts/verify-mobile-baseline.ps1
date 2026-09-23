@@ -3,7 +3,9 @@ param()
 
 $ErrorActionPreference = "Stop"
 $repoRoot = Split-Path -Parent $PSScriptRoot
-$wrapper = Join-Path $repoRoot "gradlew.bat"
+$onWindows = [System.Environment]::OSVersion.Platform -eq [System.PlatformID]::Win32NT
+$wrapperName = if ($onWindows) { "gradlew.bat" } else { "gradlew" }
+$wrapper = Join-Path $repoRoot $wrapperName
 
 if (-not (Test-Path -LiteralPath $wrapper)) {
     throw "Gradle Wrapper is missing: $wrapper"
