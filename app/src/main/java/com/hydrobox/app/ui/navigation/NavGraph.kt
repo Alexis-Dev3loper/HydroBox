@@ -186,7 +186,11 @@ private fun MainScaffold(
                     )
                 }
                 composable(Route.History.path)   {
-                    HistoryScreen(paddingValues = PaddingValues(), api = authVM.domainApi)
+                    HistoryScreen(
+                        paddingValues = PaddingValues(),
+                        api = authVM.domainApi,
+                        scopes = auth.scopes
+                    )
                 }
                 composable(Route.Crops.path)     {
                     CropsScreen(

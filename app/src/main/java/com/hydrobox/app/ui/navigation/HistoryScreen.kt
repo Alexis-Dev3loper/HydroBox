@@ -4,6 +4,8 @@ import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.drawscope.withTransform
 import androidx.compose.ui.geometry.CornerRadius
 import com.hydrobox.app.api.ApiMeasurement
+import com.hydrobox.app.api.ApiAutomationExecution
+import com.hydrobox.app.api.ApiCommand
 import com.hydrobox.app.api.ApiSensor
 import com.hydrobox.app.api.ApiSensorRange
 import com.hydrobox.app.api.HydroDomainApi
@@ -19,6 +21,8 @@ import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.tween
 import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.background
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.foundation.layout.*
 import androidx.compose.foundation.lazy.LazyRow
 import androidx.compose.foundation.lazy.items
@@ -26,9 +30,7 @@ import androidx.compose.foundation.shape.CircleShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.material.icons.Icons
 import androidx.compose.material.icons.filled.Bolt
-import androidx.compose.material.icons.filled.Science
-import androidx.compose.material.icons.filled.Speed
-import androidx.compose.material.icons.filled.WaterDrop
+import androidx.compose.material.icons.filled.Schedule
 import androidx.compose.material3.*
 import androidx.compose.runtime.*
 import androidx.compose.ui.Alignment
@@ -44,7 +46,8 @@ import com.hydrobox.app.ui.components.HydroCard
 import com.hydrobox.app.ui.components.SegmentedChip
 import com.hydrobox.app.ui.components.SegmentedVariant
 import com.hydrobox.app.ui.theme.BrandPrimary
-import com.hydrobox.app.ui.theme.Error
+import com.hydrobox.app.ui.model.HistoryEventKind
+import com.hydrobox.app.ui.model.buildHistoryEvents
 import com.hydrobox.app.ui.model.formatLocalTimestamp
 import com.hydrobox.app.ui.model.formatSensorReading
 import com.hydrobox.app.ui.model.readingSubtitle
@@ -56,13 +59,21 @@ import androidx.compose.foundation.layout.ExperimentalLayoutApi
 
 @OptIn(ExperimentalLayoutApi::class)
 @Composable
-fun HistoryScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
+fun HistoryScreen(
+    paddingValues: PaddingValues,
+    api: HydroDomainApi,
+    scopes: Set<String> = emptySet()
+) {
     var range by remember { mutableStateOf(TimeRange.Last7d) }
     var metric by remember { mutableStateOf(Metric.PH) }
 
     var loading by remember { mutableStateOf(true) }
     var error by remember { mutableStateOf<String?>(null) }
     var records by remember { mutableStateOf<List<ApiMeasurement>>(emptyList()) }
+    var commands by remember { mutableStateOf<List<ApiCommand>>(emptyList()) }
+    var executions by remember { mutableStateOf<List<ApiAutomationExecution>>(emptyList()) }
+    var actuatorNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
+    var automationNames by remember { mutableStateOf<Map<String, String>>(emptyMap()) }
     var sensorsByKey by remember { mutableStateOf<Map<String, ApiSensor>>(emptyMap()) }
     var rangesByKey by remember { mutableStateOf<Map<String, ApiSensorRange>>(emptyMap()) }
 
@@ -76,8 +87,16 @@ fun HistoryScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
                 ?.let { api.sensorRanges(it).associateBy(ApiSensorRange::sensorKey) }
                 .orEmpty()
             records = api.measurements(limit = 100).items
+            if ("command:read" in scopes) {
+                commands = api.commands(limit = 100).items
+                actuatorNames = api.actuators().associate { it.actuatorKey to it.name }
+            }
+            if ("automation:read" in scopes) {
+                executions = api.automationExecutions(limit = 100).items
+                automationNames = api.automations(limit = 100).items.associate { it.ruleUuid to it.name }
+            }
         } catch (e: Exception) {
-            error = "No se pudieron cargar las mediciones"
+            error = "No se pudieron cargar todos los datos del historial"
         } finally {
             loading = false
         }
@@ -106,11 +125,21 @@ fun HistoryScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
     }
     val series = points.map { it.value.toFloat() }
     val metricLabel = sensor?.name ?: metric.fallbackLabel
+    val historyEvents = remember(commands, executions, actuatorNames, automationNames) {
+        buildHistoryEvents(
+            commands = commands,
+            executions = executions,
+            actuatorNames = actuatorNames,
+            automationNames = automationNames,
+            limit = 8
+        )
+    }
 
     Column(
         Modifier
             .padding(paddingValues)
             .fillMaxSize()
+            .verticalScroll(rememberScrollState())
             .padding(16.dp),
         verticalArrangement = Arrangement.spacedBy(16.dp)
     ) {
@@ -238,34 +267,33 @@ fun HistoryScreen(paddingValues: PaddingValues, api: HydroDomainApi) {
         // ===================== Eventos =====================
         HydroCard(
             title = "Eventos",
-            subtitle = "Alarmas, cambios de actuadores y calibraciones",
+            subtitle = "Comandos y ejecuciones registrados por la plataforma",
             modifier = Modifier.fillMaxWidth()
         ) {
             Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(14.dp)) {
-                TimelineEventRow(
-                    icon = Icons.Filled.Bolt,
-                    title = "Bomba de agua — ON",
-                    subtitle = "Programado | 10:00",
-                    accent = BrandPrimary
-                )
-                TimelineEventRow(
-                    icon = Icons.Filled.Science,
-                    title = "pH fuera de rango",
-                    subtitle = "Lectura = 5.5 | Óptimo: 5.8–6.2",
-                    accent = Error
-                )
-                TimelineEventRow(
-                    icon = Icons.Filled.Speed,
-                    title = "Extractor — OFF",
-                    subtitle = "Manual | 12:43",
-                    accent = MaterialTheme.colorScheme.onSurfaceVariant
-                )
-                TimelineEventRow(
-                    icon = Icons.Filled.WaterDrop,
-                    title = "Dosificación Micro — 8 ml",
-                    subtitle = "Rutina semanal | 10:02",
-                    accent = BrandPrimary
-                )
+                if (historyEvents.isEmpty()) {
+                    Text(
+                        "No hay comandos ni ejecuciones reales para mostrar.",
+                        color = MaterialTheme.colorScheme.onSurfaceVariant
+                    )
+                } else {
+                    historyEvents.forEach { event ->
+                        TimelineEventRow(
+                            icon = if (event.kind == HistoryEventKind.COMMAND) {
+                                Icons.Filled.Bolt
+                            } else {
+                                Icons.Filled.Schedule
+                            },
+                            title = event.title,
+                            subtitle = "${event.detail} · ${formatLocalTimestamp(event.occurredAt)}",
+                            accent = if (event.failed) {
+                                MaterialTheme.colorScheme.error
+                            } else {
+                                BrandPrimary
+                            }
+                        )
+                    }
+                }
             }
         }
     }
