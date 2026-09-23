@@ -1,0 +1,243 @@
+{
+  "schema": "hydrobox.mobile-api-consumer.v1",
+  "api_version": "1",
+  "base_path": "/api/v1",
+  "operations": [
+    {
+      "id": "auth.issue_token",
+      "method": "POST",
+      "path": "/api/v1/auth/token",
+      "auth": "public",
+      "scopes": [],
+      "success_status": 200
+    },
+    {
+      "id": "auth.refresh_token",
+      "method": "POST",
+      "path": "/api/v1/auth/refresh",
+      "auth": "public",
+      "scopes": [],
+      "success_status": 200
+    },
+    {
+      "id": "auth.logout",
+      "method": "POST",
+      "path": "/api/v1/auth/logout",
+      "auth": "human_bearer",
+      "scopes": [
+        "profile:read"
+      ],
+      "success_status": 204
+    },
+    {
+      "id": "auth.me",
+      "method": "GET",
+      "path": "/api/v1/me",
+      "auth": "human_bearer",
+      "scopes": [
+        "profile:read"
+      ],
+      "success_status": 200
+    },
+    {
+      "id": "catalog.sensors",
+      "method": "GET",
+      "path": "/api/v1/sites/{site_key}/catalogs/sensors",
+      "auth": "human_bearer",
+      "scopes": [
+        "catalog:read"
+      ],
+      "success_status": 200
+    },
+    {
+      "id": "catalog.actuators",
+      "method": "GET",
+      "path": "/api/v1/sites/{site_key}/catalogs/actuators",
+      "auth": "human_bearer",
+      "scopes": [
+        "catalog:read"
+      ],
+      "success_status": 200
+    },
+    {
+      "id": "catalog.nutrients",
+      "method": "GET",
+      "path": "/api/v1/sites/{site_key}/catalogs/nutrients",
+      "auth": "human_bearer",
+      "scopes": [
+        "catalog:read"
+      ],
+      "success_status": 200
+    },
+    {
+      "id": "catalog.crops",
+      "method": "GET",
+      "path": "/api/v1/sites/{site_key}/catalogs/crops",
+      "auth": "human_bearer",
+      "scopes": [
+        "catalog:read"
+      ],
+      "success_status": 200
+    },
+    {
+      "id": "catalog.crop_sensor_ranges",
+      "method": "GET",
+      "path": "/api/v1/sites/{site_key}/catalogs/crops/{crop_key}/sensor-ranges",
+      "auth": "human_bearer",
+      "scopes": [
+        "catalog:read"
+      ],
+      "success_status": 200
+    },
+    {
+      "id": "cycle.list",
+      "method": "GET",
+      "path": "/api/v1/sites/{site_key}/cycles",
+      "auth": "human_bearer",
+      "scopes": [
+        "cycle:read"
+      ],
+      "success_status": 200
+    },
+    {
+      "id": "cycle.create",
+      "method": "POST",
+      "path": "/api/v1/sites/{site_key}/cycles",
+      "auth": "human_bearer",
+      "scopes": [
+        "cycle:write"
+      ],
+      "success_status": 201
+    },
+    {
+      "id": "cycle.update",
+      "method": "PATCH",
+      "path": "/api/v1/sites/{site_key}/cycles/{cycle_uuid}",
+      "auth": "human_bearer",
+      "scopes": [
+        "cycle:write"
+      ],
+      "success_status": 200
+    },
+    {
+      "id": "telemetry.measurements",
+      "method": "GET",
+      "path": "/api/v1/sites/{site_key}/telemetry/measurements",
+      "auth": "human_bearer",
+      "scopes": [
+        "telemetry:read"
+      ],
+      "success_status": 200
+    },
+    {
+      "id": "command.list",
+      "method": "GET",
+      "path": "/api/v1/sites/{site_key}/commands",
+      "auth": "human_bearer",
+      "scopes": [
+        "command:read"
+      ],
+      "success_status": 200
+    },
+    {
+      "id": "command.show",
+      "method": "GET",
+      "path": "/api/v1/sites/{site_key}/commands/{command_uuid}",
+      "auth": "human_bearer",
+      "scopes": [
+        "command:read"
+      ],
+      "success_status": 200
+    },
+    {
+      "id": "command.create",
+      "method": "POST",
+      "path": "/api/v1/sites/{site_key}/commands",
+      "auth": "human_bearer",
+      "scopes": [
+        "command:write"
+      ],
+      "success_status": 202
+    },
+    {
+      "id": "dosing.show",
+      "method": "GET",
+      "path": "/api/v1/sites/{site_key}/dosing-requests/{request_uuid}",
+      "auth": "human_bearer",
+      "scopes": [
+        "dosing:read"
+      ],
+      "success_status": 200
+    },
+    {
+      "id": "dosing.create",
+      "method": "POST",
+      "path": "/api/v1/sites/{site_key}/dosing-requests",
+      "auth": "human_bearer",
+      "scopes": [
+        "dosing:write"
+      ],
+      "success_status": 202
+    },
+    {
+      "id": "automation.list",
+      "method": "GET",
+      "path": "/api/v1/sites/{site_key}/automations",
+      "auth": "human_bearer",
+      "scopes": [
+        "automation:read"
+      ],
+      "success_status": 200
+    },
+    {
+      "id": "automation.show",
+      "method": "GET",
+      "path": "/api/v1/sites/{site_key}/automations/{rule_uuid}",
+      "auth": "human_bearer",
+      "scopes": [
+        "automation:read"
+      ],
+      "success_status": 200
+    },
+    {
+      "id": "automation.create",
+      "method": "POST",
+      "path": "/api/v1/sites/{site_key}/automations",
+      "auth": "human_bearer",
+      "scopes": [
+        "automation:write"
+      ],
+      "success_status": 201
+    },
+    {
+      "id": "automation.update",
+      "method": "PATCH",
+      "path": "/api/v1/sites/{site_key}/automations/{rule_uuid}",
+      "auth": "human_bearer",
+      "scopes": [
+        "automation:write"
+      ],
+      "success_status": 200
+    },
+    {
+      "id": "automation.delete",
+      "method": "DELETE",
+      "path": "/api/v1/sites/{site_key}/automations/{rule_uuid}",
+      "auth": "human_bearer",
+      "scopes": [
+        "automation:write"
+      ],
+      "success_status": 204
+    },
+    {
+      "id": "automation.executions",
+      "method": "GET",
+      "path": "/api/v1/sites/{site_key}/automation-executions",
+      "auth": "human_bearer",
+      "scopes": [
+        "automation:read"
+      ],
+      "success_status": 200
+    }
+  ]
+}
