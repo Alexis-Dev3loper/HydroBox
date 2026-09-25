@@ -1,24 +1,24 @@
 # MB-007 — Automation, alertas, health e historial
 
-Actualizado: **2026-09-22**.
+Actualizado: **2026-09-25**.
 
-Estado: **SLICES A–C IMPLEMENTADOS / BASE B VERIFICADA / CIERRE LOCAL PENDIENTE DE CI**.
+Estado: **SLICES A–D IMPLEMENTADOS / SLICE D LOCAL PENDIENTE DE CI**.
 
 ## Evidencia del estado real
 
 - Mobile ya consume catálogos, telemetría, commands y dosing desde API v1.
 - `HistoryScreen` obtiene telemetría real, pero su bloque «Eventos» contiene
   cuatro ejemplos hardcodeados que no deben presentarse como historial real.
-- `NotificationScreen` solo muestra «Sistema de Notificaciones (demo)».
-- Mobile tiene cliente y pantalla base Automation publicados/verificados;
-  edición versionada e historial real están implementados localmente y pendientes de CI.
+- En la auditoría inicial, `NotificationScreen` solo mostraba un estado no
+  disponible; ya fue sustituido por el consumidor durable de HD-016.
+- Mobile tiene cliente y pantalla Automation publicados/verificados, incluida
+  edición versionada e historial real.
 - Web implementa y prueba CRUD/versionado de `/automations` y lectura de
   `/automation-executions`; creación usa idempotencia y toda mutación posterior
   exige `If-Match` fuerte con la versión vigente.
-- OpenAPI declara `/api/v1/health`, `/alerts` y ACK de alertas, pero las rutas,
-  controllers, repositories y persistencia de alertas no existen actualmente.
-- Core no contiene un dominio durable de alertas. HD-014, HD-015 y HD-016 siguen
-  `PLANNED / PENDIENTE`.
+- OpenAPI, Web y Core v6 ya implementan `/alerts`, ACK humano, productores,
+  deduplicación y lifecycle durable. `/api/v1/health` continúa representando
+  liveness central y no reemplaza health físico del sitio.
 
 ## Corte implementable sin inventar contratos
 
@@ -51,12 +51,12 @@ con `automation:write` y sesión online verificada.
 - `/api/v1/health` representa liveness del proceso central, no health físico del
   sitio, y no se usará como sustituto de Edge/Arduino health.
 
-### Slice D — Alertas y ACK — BLOQUEADO POR DEPENDENCIA
+### Slice D — Alertas y ACK — IMPLEMENTADO LOCALMENTE
 
-No crear alertas a partir de rangos en el cliente ni persistir ACK locales.
-Hasta que HD-016 defina productores, dedupe, lifecycle, persistencia y rutas
-operativas, Notificaciones mostrará un estado explícito de funcionalidad no
-disponible y nunca fixtures/demo como datos reales.
+Mobile lista el dominio durable de Core mediante API v1, acepta filtros y cursor,
+usa el cache GET scoped existente y solo confirma recepción cuando hay sesión
+online con `alert:acknowledge`. No crea alertas desde rangos, no persiste ACK
+local y no presenta el ACK humano como resolución ni como ACK físico.
 
 ## Casos negativos obligatorios
 
@@ -112,11 +112,24 @@ nombre/acción/calendario con la versión visible y muestra ejecuciones reales;
   están disponibles hasta HD-016 y no infiere alertas desde rangos.
 - Dos pruebas nuevas cubren orden/fuentes y `sent != acknowledged`. Con las dos
   pruebas del editor, el source suma **66 tests**.
-- `47fd766` y `907af45` están revisados con `git diff --check`; requieren CI.
+- `47fd766` y `907af45` quedaron publicados y CI `35814618710` pasó 66 tests,
+  lint y assemble.
+
+## Evidencia local del Slice D
+
+- `378818d` añade DTO/lifecycle estricto, listado paginado con filtros, ACK
+  idempotente online e invalidación de cache.
+- `NotificationScreen` muestra estados `open`, `acknowledged` y `resolved`,
+  severidad, sujeto, ocurrencias y timestamps reales; distingue permisos,
+  loading, vacío, error, cache/offline y conflicto concurrente.
+- Los manifests Web/Mobile quedan byte-idénticos con **26 operaciones**.
+- Cinco pruebas nuevas cubren parsing, filtros, idempotencia, invalidación,
+  lifecycle contradictorio y presentación. El source suma **73 tests**.
+- El host no dispone de JDK/SDK; `testDebugUnitTest`, `lintDebug` y
+  `assembleDebug` deben validarse en CI después del push autorizado.
 
 ## Fuera de alcance
 
-- Diseñar o implementar el dominio HD-016 de alertas.
 - Inventar health Edge/Arduino, MQTT, hardware, deployment o credenciales.
 - Cambiar schemas Core, keys compartidas o contratos OpenAPI.
 - Background notifications/push, cámara y release hardening.

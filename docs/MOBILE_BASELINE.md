@@ -120,8 +120,8 @@ no requiere ni autoriza broker, API, hardware o credenciales reales.
 
 ## Deuda priorizada
 
-1. **MB-007 P2:** publicar/verificar el cliente Automation y continuar su UX;
-   alertas siguen bloqueadas por HD-016.
+1. **MB-007 P2:** validar en CI el Slice D de alertas durables/ACK online y
+   cerrar Mobile #8 si test, lint y assemble permanecen verdes.
 2. **MB-008+**: cámara segura y hardening final.
 3. **CI:** migrar las Actions que aún apuntan a `setup-java@v4`/Node 20.
 
