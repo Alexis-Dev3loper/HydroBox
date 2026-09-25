@@ -238,6 +238,26 @@
         "automation:read"
       ],
       "success_status": 200
+    },
+    {
+      "id": "alert.list",
+      "method": "GET",
+      "path": "/api/v1/sites/{site_key}/alerts",
+      "auth": "human_bearer",
+      "scopes": [
+        "alert:read"
+      ],
+      "success_status": 200
+    },
+    {
+      "id": "alert.acknowledge",
+      "method": "POST",
+      "path": "/api/v1/sites/{site_key}/alerts/{alert_uuid}/acknowledgements",
+      "auth": "human_bearer",
+      "scopes": [
+        "alert:acknowledge"
+      ],
+      "success_status": 201
     }
   ]
 }

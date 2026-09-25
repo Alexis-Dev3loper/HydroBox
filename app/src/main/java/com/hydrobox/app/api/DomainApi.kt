@@ -216,6 +216,24 @@ data class ApiAutomationExecution(
     val errorMessage: String?
 )
 
+data class ApiAlert(
+    val alertUuid: String,
+    val alertKey: String,
+    val severity: String,
+    val subjectType: String,
+    val subjectKey: String,
+    val statusKey: String,
+    val summary: String,
+    val detail: String,
+    val occurrenceCount: Int,
+    val occurredAt: Instant,
+    val firstOccurredAt: Instant,
+    val lastOccurredAt: Instant,
+    val acknowledgedAt: Instant?,
+    val resolvedAt: Instant?,
+    val correlationUuid: String?
+)
+
 data class ApiPage<T>(
     val items: List<T>,
     val hasMore: Boolean,
@@ -279,6 +297,13 @@ interface HydroDomainApi {
         limit: Int = 100,
         cursor: String? = null
     ): ApiPage<ApiAutomationExecution>
+    suspend fun alerts(
+        limit: Int = 100,
+        cursor: String? = null,
+        statusKey: String? = null,
+        severity: String? = null
+    ): ApiPage<ApiAlert>
+    suspend fun acknowledgeAlert(alertUuid: String): ApiAlert
 }
 
 object HydroApiContract {
@@ -323,4 +348,25 @@ object HydroApiContract {
     val automationActionKeys: Set<String> = setOf("set_state", "run_for", "nutrient_dose")
     val automationScheduleTypes: Set<String> = setOf("once", "daily", "weekdays")
     val automationExecutionStatusKeys: Set<String> = setOf("running", "dispatched", "skipped", "failed")
+    val alertKeys: Set<String> = setOf(
+        "sensor_out_of_range",
+        "water_level_critical",
+        "telemetry_stale",
+        "edge_offline",
+        "arduino_offline",
+        "actuator_offline",
+        "command_timeout",
+        "dosing_failed",
+        "automation_failed"
+    )
+    val alertSeverities: Set<String> = setOf("info", "warning", "critical")
+    val alertSubjectTypes: Set<String> = setOf(
+        "sensor",
+        "device",
+        "actuator",
+        "command",
+        "dosing",
+        "automation"
+    )
+    val alertStatusKeys: Set<String> = setOf("open", "acknowledged", "resolved")
 }

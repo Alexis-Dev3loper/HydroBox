@@ -54,7 +54,6 @@ class MobileApiConsumerManifestTest {
     fun manifestDoesNotClaimDomainsThatAreStillUnavailable() {
         val text = manifestFile(File("").absoluteFile).readText()
 
-        assertTrue("alerts must remain outside the implemented consumer manifest", !text.contains("alert."))
         assertTrue("physical health must remain outside the manifest", !text.contains("health."))
         assertTrue("camera must remain outside the manifest", !text.contains("camera."))
     }
@@ -108,7 +107,9 @@ class MobileApiConsumerManifestTest {
             "automation.create" to domain("POST", "/api/v1/sites/{site_key}/automations", 201, listOf("automation:write"), "override suspend fun createAutomation("),
             "automation.update" to domain("PATCH", "/api/v1/sites/{site_key}/automations/{rule_uuid}", 200, listOf("automation:write"), "override suspend fun updateAutomation("),
             "automation.delete" to domain("DELETE", "/api/v1/sites/{site_key}/automations/{rule_uuid}", 204, listOf("automation:write"), "override suspend fun deleteAutomation("),
-            "automation.executions" to domain("GET", "/api/v1/sites/{site_key}/automation-executions", 200, listOf("automation:read"), "pagedPath(\"automation-executions\", limit, cursor)")
+            "automation.executions" to domain("GET", "/api/v1/sites/{site_key}/automation-executions", 200, listOf("automation:read"), "pagedPath(\"automation-executions\", limit, cursor)"),
+            "alert.list" to domain("GET", "/api/v1/sites/{site_key}/alerts", 200, listOf("alert:read"), "override suspend fun alerts("),
+            "alert.acknowledge" to domain("POST", "/api/v1/sites/{site_key}/alerts/{alert_uuid}/acknowledgements", 201, listOf("alert:acknowledge"), "override suspend fun acknowledgeAlert(")
         )
     }
 }

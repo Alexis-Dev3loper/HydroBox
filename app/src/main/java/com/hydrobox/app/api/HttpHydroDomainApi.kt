@@ -329,6 +329,43 @@ class HttpHydroDomainApi(
         return request(contextProvider(), "GET", path).page { it.toAutomationExecution() }
     }
 
+    override suspend fun alerts(
+        limit: Int,
+        cursor: String?,
+        statusKey: String?,
+        severity: String?
+    ): ApiPage<ApiAlert> {
+        if (limit !in 1..100 ||
+            (statusKey != null && statusKey !in HydroApiContract.alertStatusKeys) ||
+            (severity != null && severity !in HydroApiContract.alertSeverities)
+        ) throw invalidResponse()
+        val query = buildList {
+            add("limit=$limit")
+            cursor?.let { add("cursor=${encodeQuery(it)}") }
+            statusKey?.let { add("status_key=${encodeQuery(it)}") }
+            severity?.let { add("severity=${encodeQuery(it)}") }
+        }.joinToString("&")
+        return request(contextProvider(), "GET", "alerts?$query").page { it.toAlert() }
+    }
+
+    override suspend fun acknowledgeAlert(alertUuid: String): ApiAlert {
+        val canonicalAlertUuid = requireUuid(alertUuid)
+        val acknowledgementUuid = uuid().toString()
+        val acknowledged = requestIdempotent(
+            context = contextProvider(),
+            method = "POST",
+            path = "alerts/$canonicalAlertUuid/acknowledgements",
+            body = JSONObject(),
+            idempotencyKey = acknowledgementUuid
+        ).requireDataObject().toAlert()
+        if (acknowledged.alertUuid != canonicalAlertUuid ||
+            acknowledged.statusKey != "acknowledged" ||
+            acknowledged.acknowledgedAt == null
+        ) throw invalidResponse()
+        invalidateCachedReads(setOf("alerts"))
+        return acknowledged
+    }
+
     private suspend fun <T> list(path: String, transform: (JSONObject) -> T): List<T> {
         val envelope = request(contextProvider(), "GET", path)
         return envelope.requireDataArray().objects().map(transform)
@@ -776,6 +813,41 @@ class HttpHydroDomainApi(
             commandUuid = nullableString("command_uuid")?.let(::requireUuid),
             errorMessage = nullableString("error_message")
         )
+
+    private fun JSONObject.toAlert(): ApiAlert {
+        val statusKey = requireAllowedKey("status_key", HydroApiContract.alertStatusKeys)
+        val acknowledgedAt = nullableInstant("acknowledged_at")
+        val resolvedAt = nullableInstant("resolved_at")
+        if ((statusKey == "open" && (acknowledgedAt != null || resolvedAt != null)) ||
+            (statusKey == "acknowledged" && (acknowledgedAt == null || resolvedAt != null)) ||
+            (statusKey == "resolved" && resolvedAt == null)
+        ) throw invalidResponse()
+
+        val firstOccurredAt = requireInstant("first_occurred_at")
+        val lastOccurredAt = requireInstant("last_occurred_at")
+        val occurredAt = requireInstant("occurred_at")
+        if (lastOccurredAt.isBefore(firstOccurredAt) || occurredAt != lastOccurredAt) {
+            throw invalidResponse()
+        }
+
+        return ApiAlert(
+            alertUuid = requireUuid(requireString("alert_uuid")),
+            alertKey = requireAllowedKey("alert_key", HydroApiContract.alertKeys),
+            severity = requireAllowedKey("severity", HydroApiContract.alertSeverities),
+            subjectType = requireAllowedKey("subject_type", HydroApiContract.alertSubjectTypes),
+            subjectKey = requireString("subject_key"),
+            statusKey = statusKey,
+            summary = requireString("summary"),
+            detail = requireString("detail"),
+            occurrenceCount = requirePositiveInt("occurrence_count"),
+            occurredAt = occurredAt,
+            firstOccurredAt = firstOccurredAt,
+            lastOccurredAt = lastOccurredAt,
+            acknowledgedAt = acknowledgedAt,
+            resolvedAt = resolvedAt,
+            correlationUuid = nullableString("correlation_uuid")?.let(::requireUuid)
+        )
+    }
 
     private fun ApiAutomationDraft.toJson(): JSONObject = JSONObject().apply {
         put("name", requireAutomationName(name))

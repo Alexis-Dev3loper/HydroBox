@@ -210,7 +210,15 @@ private fun MainScaffold(
                     )
                 }
                 composable(Route.Settings.path)  { SettingsScreen() }
-                composable(Route.Notification.path) { NotificationScreen(paddingValues = PaddingValues()) }
+                composable(Route.Notification.path) {
+                    NotificationScreen(
+                        paddingValues = PaddingValues(),
+                        api = authVM.domainApi,
+                        canRead = "alert:read" in auth.scopes,
+                        canAcknowledge = !auth.offlineMode && "alert:acknowledge" in auth.scopes,
+                        offlineMode = auth.offlineMode
+                    )
+                }
             }
         }
     }

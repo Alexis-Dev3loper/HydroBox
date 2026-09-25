@@ -191,6 +191,98 @@ class HttpHydroDomainApiTest {
     }
 
     @Test
+    fun readsDurableAlertsWithCanonicalFiltersAndLifecycle() = runBlocking {
+        val alertUuid = "11111111-1111-4111-8111-111111111111"
+        val responses = ArrayDeque(
+            listOf(
+                StubResponse(
+                    200,
+                    pageEnvelope("[${alertJson(alertUuid, "open", null, null)}]", false, null)
+                )
+            )
+        )
+        val connections = mutableListOf<StubHttpURLConnection>()
+
+        val alert = api(responses, connections).alerts(
+            limit = 25,
+            cursor = "opaque+/cursor=",
+            statusKey = "open",
+            severity = "critical"
+        ).items.single()
+
+        assertEquals("edge_offline", alert.alertKey)
+        assertEquals("critical", alert.severity)
+        assertEquals("open", alert.statusKey)
+        assertEquals(2, alert.occurrenceCount)
+        assertNull(alert.acknowledgedAt)
+        assertTrue(connections.single().url.query.contains("cursor=opaque%2B%2Fcursor%3D"))
+        assertTrue(connections.single().url.query.contains("status_key=open"))
+        assertTrue(connections.single().url.query.contains("severity=critical"))
+    }
+
+    @Test
+    fun acknowledgesAlertOnlineWithIdempotencyAndInvalidatesReadCache() = runBlocking {
+        val alertUuid = "11111111-1111-4111-8111-111111111111"
+        val acknowledgementUuid = UUID.fromString("aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa")
+        val cache = FakeResponseCache()
+        cache.write(
+            CACHE_SCOPE,
+            "alerts?limit=100",
+            CachedDomainResponse(pageEnvelope("[]", false, null), Instant.parse("2026-09-15T12:00:00Z"))
+        )
+        val connections = mutableListOf<StubHttpURLConnection>()
+        val api = api(
+            ArrayDeque(
+                listOf(
+                    StubResponse(
+                        201,
+                        envelope(
+                            alertJson(
+                                alertUuid,
+                                "acknowledged",
+                                "2026-09-15T12:01:00Z",
+                                null
+                            )
+                        )
+                    )
+                )
+            ),
+            connections,
+            uuid = { acknowledgementUuid },
+            responseCache = cache
+        )
+
+        val acknowledged = api.acknowledgeAlert(alertUuid)
+
+        assertEquals("acknowledged", acknowledged.statusKey)
+        assertEquals(Instant.parse("2026-09-15T12:01:00Z"), acknowledged.acknowledgedAt)
+        assertEquals("POST", connections.single().requestMethod)
+        assertEquals(acknowledgementUuid.toString(), connections.single().headers["Idempotency-Key"])
+        assertEquals("{}", connections.single().requestBodyText)
+        assertNull(cache.read(CACHE_SCOPE, "alerts?limit=100"))
+    }
+
+    @Test
+    fun rejectsContradictoryAlertLifecycleInsteadOfInventingState() = runBlocking {
+        val alertUuid = "11111111-1111-4111-8111-111111111111"
+        val contradictory = alertJson(
+            alertUuid,
+            "open",
+            "2026-09-15T12:01:00Z",
+            null
+        )
+
+        val error = expectDomainError {
+            api(
+                ArrayDeque(listOf(StubResponse(200, pageEnvelope("[$contradictory]", false, null)))),
+                mutableListOf()
+            ).alerts()
+        }
+
+        assertEquals("api.invalid_response", error.problem.code)
+    }
+
+    @Test
     fun rejectsUnknownAutomationShapesAndInvalidClientDrafts() = runBlocking {
         val ruleUuid = "66666666-6666-4666-8666-666666666666"
         val invalidResponses = listOf(
@@ -664,6 +756,14 @@ class HttpHydroDomainApiTest {
 
     private fun executionJson(ruleUuid: String, status: String): String =
         """{"execution_uuid":"99999999-9999-4999-8999-999999999999","rule_uuid":"$ruleUuid","scheduled_for":"2026-09-16T14:30:00Z","status_key":"$status","command_uuid":null,"error_message":null}"""
+
+    private fun alertJson(
+        uuid: String,
+        status: String,
+        acknowledgedAt: String?,
+        resolvedAt: String?
+    ): String =
+        """{"alert_uuid":"$uuid","alert_key":"edge_offline","severity":"critical","subject_type":"device","subject_key":"edge_main","status_key":"$status","summary":"Edge sin health reciente","detail":"La evidencia superó el umbral.","occurrence_count":2,"occurred_at":"2026-09-15T12:00:00Z","first_occurred_at":"2026-09-15T11:55:00Z","last_occurred_at":"2026-09-15T12:00:00Z","acknowledged_at":${acknowledgedAt?.let { "\"$it\"" } ?: "null"},"resolved_at":${resolvedAt?.let { "\"$it\"" } ?: "null"},"correlation_uuid":null}"""
 
     private data class StubResponse(
         val status: Int,
