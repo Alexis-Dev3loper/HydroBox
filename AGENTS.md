@@ -27,16 +27,15 @@ Este repositorio es la aplicación Android de HydroBox. En el workspace completo
 - MB-006 está publicado y verificado en `b6e5be7`–`6700725`: cache GET
   network-first aislado por usuario/sitio, restore offline read-only, backoff,
   invalidación y estados live/cache/stale visibles. Suma 55 tests en source;
-  CI `35138093458` pasa tests, lint y assemble; Mobile #7 está cerrada. La fase
-  actual es MB-007.
+  CI `35138093458` pasa tests, lint y assemble; Mobile #7 está cerrada.
 - MB-007 Slice A está publicado y verificado en `95f4e1a`–`16fbf50`: cliente
   Automation estricto, paginado, idempotente y versionado con `If-Match`, 204
   real y tres pruebas nuevas. CI `35811253177` pasa tests, lint y assemble.
 - El corte base MB-007 está publicado hasta `4bf12e6`: edición `If-Match`,
   historial real desde commands/ejecuciones y retirada de demos. HD-016 añade
-  localmente en `378818d` la lista durable de alertas, lectura desde cache y ACK
-  humano únicamente online; sigue pendiente su verificación en CI antes de
-  cerrar Mobile #8. No confundir ese ACK con evidencia física.
+  en `378818d` la lista durable de alertas, lectura desde cache y ACK humano
+  únicamente online. CI `36112739068` pasa los 73 tests del source, lint y
+  assemble; Mobile #8 está cerrada. No confundir ese ACK con evidencia física.
 - Fase 23 congela 26 operaciones Mobile API v1 mediante
   `docs/api/v1/mobile_v1_operations.json`. `71d8043` añade su validador,
   `c70707d` lo hace compatible con el JVM Android y CI `35839253688` pasa

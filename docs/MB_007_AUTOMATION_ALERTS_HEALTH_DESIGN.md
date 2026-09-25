@@ -2,7 +2,7 @@
 
 Actualizado: **2026-09-25**.
 
-Estado: **SLICES A–D IMPLEMENTADOS / SLICE D LOCAL PENDIENTE DE CI**.
+Estado: **COMPLETADO / VERIFICADO / PUBLICADO**.
 
 ## Evidencia del estado real
 
@@ -51,7 +51,7 @@ con `automation:write` y sesión online verificada.
 - `/api/v1/health` representa liveness del proceso central, no health físico del
   sitio, y no se usará como sustituto de Edge/Arduino health.
 
-### Slice D — Alertas y ACK — IMPLEMENTADO LOCALMENTE
+### Slice D — Alertas y ACK — IMPLEMENTADO / VERIFICADO / PUBLICADO
 
 Mobile lista el dominio durable de Core mediante API v1, acepta filtros y cursor,
 usa el cache GET scoped existente y solo confirma recepción cuando hay sesión
@@ -125,8 +125,9 @@ nombre/acción/calendario con la versión visible y muestra ejecuciones reales;
 - Los manifests Web/Mobile quedan byte-idénticos con **26 operaciones**.
 - Cinco pruebas nuevas cubren parsing, filtros, idempotencia, invalidación,
   lifecycle contradictorio y presentación. El source suma **73 tests**.
-- El host no dispone de JDK/SDK; `testDebugUnitTest`, `lintDebug` y
-  `assembleDebug` deben validarse en CI después del push autorizado.
+- El host no dispone de JDK/SDK; CI `36112739068` validó
+  `testDebugUnitTest`, `lintDebug` y `assembleDebug` sobre `0c8f450`.
+- Mobile #8 está cerrada.
 
 ## Fuera de alcance
 
