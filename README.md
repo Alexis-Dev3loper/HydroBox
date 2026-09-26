@@ -2,8 +2,8 @@
 
 Cliente Android nativo de HydroBox construido con Kotlin, Jetpack Compose y
 Material 3. La arquitectura objetivo consume exclusivamente la API central;
-el acceso MQTT directo que todavía existe está marcado como **LEGACY** y queda
-deshabilitado por defecto.
+el acceso MQTT directo fue retirado y los intents físicos se registran mediante
+la API v1.
 
 ## Requisitos
 
@@ -25,14 +25,12 @@ También se aceptan propiedades Gradle (`-Phydrobox.apiBaseUrl=...`) o variables
 de entorno con prefijo `HYDROBOX_MOBILE_`; la precedencia exacta y la matriz se
 documentan en `docs/MOBILE_BASELINE.md`.
 
-El MQTT directo solo puede habilitarse en debug y no debe apuntar a hardware ni
-infraestructura real durante pruebas. Release lo fuerza a deshabilitado.
-
 La URL API debe incluir la base versionada `/api/v1`. El login usa token opaco,
 refresh rotatorio, logout y `/me`; no persiste la contraseña. Resumen, sensores,
 historial y cultivos usan además catálogos, ciclos y telemetría v1 con
-`site_key`, Bearer y keys canónicas. MQTT/control directo sigue siendo legacy y
-permanece deshabilitado por defecto hasta MB-004. Los contratos y rollout están
+`site_key`, Bearer y keys canónicas. Mobile bloquea tráfico HTTP cleartext a
+nivel del manifest y cifra access/refresh tokens con Android Keystore; no hay
+fallback MQTT. Los contratos y rollout están
 en `docs/MOBILE_AUTH.md` y `docs/MB_003_API_V1_DESIGN.md`.
 
 ## Verificación

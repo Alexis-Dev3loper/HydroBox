@@ -14,6 +14,7 @@ class SensitiveBackupRulesTest {
 
         assertTrue(manifest.contains("android:fullBackupContent=\"@xml/backup_rules\""))
         assertTrue(manifest.contains("android:dataExtractionRules=\"@xml/data_extraction_rules\""))
+        assertTrue(manifest.contains("android:usesCleartextTraffic=\"false\""))
 
         listOf(legacyRules, extractionRules).forEach { rules ->
             assertTrue(rules.contains("hydrobox_secure_session.xml"))
