@@ -234,6 +234,14 @@ data class ApiAlert(
     val correlationUuid: String?
 )
 
+data class ApiCameraSession(
+    val sessionUuid: String,
+    val siteKey: String,
+    val playbackUrl: String,
+    val accessToken: String,
+    val expiresAt: Instant
+)
+
 data class ApiPage<T>(
     val items: List<T>,
     val hasMore: Boolean,
@@ -304,6 +312,8 @@ interface HydroDomainApi {
         severity: String? = null
     ): ApiPage<ApiAlert>
     suspend fun acknowledgeAlert(alertUuid: String): ApiAlert
+    suspend fun createCameraSession(): ApiCameraSession
+    suspend fun closeCameraSession(sessionUuid: String)
 }
 
 object HydroApiContract {

@@ -51,11 +51,10 @@ class MobileApiConsumerManifestTest {
     }
 
     @Test
-    fun manifestDoesNotClaimDomainsThatAreStillUnavailable() {
+    fun manifestDoesNotClaimPhysicalHealthThatIsStillUnavailable() {
         val text = manifestFile(File("").absoluteFile).readText()
 
         assertTrue("physical health must remain outside the manifest", !text.contains("health."))
-        assertTrue("camera must remain outside the manifest", !text.contains("camera."))
     }
 
     companion object {
@@ -109,7 +108,9 @@ class MobileApiConsumerManifestTest {
             "automation.delete" to domain("DELETE", "/api/v1/sites/{site_key}/automations/{rule_uuid}", 204, listOf("automation:write"), "override suspend fun deleteAutomation("),
             "automation.executions" to domain("GET", "/api/v1/sites/{site_key}/automation-executions", 200, listOf("automation:read"), "pagedPath(\"automation-executions\", limit, cursor)"),
             "alert.list" to domain("GET", "/api/v1/sites/{site_key}/alerts", 200, listOf("alert:read"), "override suspend fun alerts("),
-            "alert.acknowledge" to domain("POST", "/api/v1/sites/{site_key}/alerts/{alert_uuid}/acknowledgements", 201, listOf("alert:acknowledge"), "override suspend fun acknowledgeAlert(")
+            "alert.acknowledge" to domain("POST", "/api/v1/sites/{site_key}/alerts/{alert_uuid}/acknowledgements", 201, listOf("alert:acknowledge"), "override suspend fun acknowledgeAlert("),
+            "camera.session.create" to domain("POST", "/api/v1/sites/{site_key}/camera-sessions", 201, listOf("camera:read"), "override suspend fun createCameraSession("),
+            "camera.session.close" to domain("DELETE", "/api/v1/sites/{site_key}/camera-sessions/{session_uuid}", 204, listOf("camera:read"), "override suspend fun closeCameraSession(")
         )
     }
 }

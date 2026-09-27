@@ -41,6 +41,7 @@ sealed class Route(val path: String) {
 
     data object Account : Route("account")
     data object Automation : Route("automation")
+    data object Camera : Route("camera")
     data object Settings : Route("settings")
     data object Notification : Route("notification")
 }
@@ -113,6 +114,7 @@ private fun MainScaffold(
                 DrawerContent(
                     onAccount      = { scope.launch { drawerState.close() }; nav.navigate(Route.Account.path) },
                     onAutomation   = { navigateFromDrawer(nav, drawerState, Route.Automation.path, scope) },
+                    onCamera       = { navigateFromDrawer(nav, drawerState, Route.Camera.path, scope) },
                     onSettings     = { navigateFromDrawer(nav, drawerState, Route.Settings.path, scope) },
                     onNotification = { navigateFromDrawer(nav, drawerState, Route.Notification.path, scope) },
                     onOpenHydrobox  = { openExternal("https://hydrobox.pi.jademajesty.com/") },
@@ -206,6 +208,14 @@ private fun MainScaffold(
                         api = authVM.domainApi,
                         canRead = "automation:read" in auth.scopes,
                         canWrite = !auth.offlineMode && "automation:write" in auth.scopes,
+                        offlineMode = auth.offlineMode
+                    )
+                }
+                composable(Route.Camera.path) {
+                    CameraScreen(
+                        paddingValues = PaddingValues(),
+                        api = authVM.domainApi,
+                        canRead = "camera:read" in auth.scopes,
                         offlineMode = auth.offlineMode
                     )
                 }
@@ -344,6 +354,7 @@ private fun DrawerHeader(
 private fun DrawerContent(
     onAccount: () -> Unit,
     onAutomation: () -> Unit,
+    onCamera: () -> Unit,
     onSettings: () -> Unit,
     onNotification: () -> Unit,
     onOpenHydrobox: () -> Unit,
@@ -368,6 +379,20 @@ private fun DrawerContent(
         selected = false,
         onClick = onAutomation,
         icon = { Icon(Icons.Outlined.Schedule, contentDescription = null) },
+        colors = NavigationDrawerItemDefaults.colors(
+            selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
+            selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            selectedTextColor = MaterialTheme.colorScheme.onPrimaryContainer,
+            unselectedIconColor = MaterialTheme.colorScheme.onSurfaceVariant,
+            unselectedTextColor = MaterialTheme.colorScheme.onSurface
+        ),
+        modifier = Modifier.padding(NavigationDrawerItemDefaults.ItemPadding)
+    )
+    NavigationDrawerItem(
+        label = { Text("Cámara") },
+        selected = false,
+        onClick = onCamera,
+        icon = { Icon(Icons.Outlined.Videocam, contentDescription = null) },
         colors = NavigationDrawerItemDefaults.colors(
             selectedContainerColor = MaterialTheme.colorScheme.primaryContainer,
             selectedIconColor = MaterialTheme.colorScheme.onPrimaryContainer,

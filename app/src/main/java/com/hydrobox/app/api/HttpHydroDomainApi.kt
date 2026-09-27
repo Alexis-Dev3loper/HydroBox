@@ -366,6 +366,29 @@ class HttpHydroDomainApi(
         return acknowledged
     }
 
+    override suspend fun createCameraSession(): ApiCameraSession {
+        val context = contextProvider()
+        val session = requestIdempotent(
+            context = context,
+            method = "POST",
+            path = "camera-sessions",
+            body = JSONObject(),
+            idempotencyKey = uuid().toString()
+        ).requireDataObject().toCameraSession()
+        if (session.siteKey != context.siteKey || !session.expiresAt.isAfter(now())) {
+            throw invalidResponse()
+        }
+        return session
+    }
+
+    override suspend fun closeCameraSession(sessionUuid: String) {
+        requestNoContent(
+            context = contextProvider(),
+            method = "DELETE",
+            path = "camera-sessions/${requireUuid(sessionUuid)}"
+        )
+    }
+
     private suspend fun <T> list(path: String, transform: (JSONObject) -> T): List<T> {
         val envelope = request(contextProvider(), "GET", path)
         return envelope.requireDataArray().objects().map(transform)
@@ -467,7 +490,7 @@ class HttpHydroDomainApi(
         context: DomainApiContext,
         method: String,
         path: String,
-        ifMatchVersion: Int
+        ifMatchVersion: Int? = null
     ) {
         validateContext(context)
         val raw = executeNetworkRequest(
@@ -669,6 +692,24 @@ class HttpHydroDomainApi(
         source = requireString("source"),
         createdAt = requireInstant("created_at")
     )
+
+    private fun JSONObject.toCameraSession(): ApiCameraSession {
+        if (requireString("transport") != "webrtc-whep" || requireString("status") != "requested") {
+            throw invalidResponse()
+        }
+        val playbackUrl = requireString("playback_url")
+        val accessToken = requireString("access_token")
+        if (!playbackUrl.startsWith("https://", ignoreCase = true) || accessToken.length < 32) {
+            throw invalidResponse()
+        }
+        return ApiCameraSession(
+            sessionUuid = requireUuid(requireString("session_uuid")),
+            siteKey = requireString("site_key"),
+            playbackUrl = playbackUrl,
+            accessToken = accessToken,
+            expiresAt = requireInstant("expires_at")
+        )
+    }
 
     private fun JSONObject.toMeasurement(): ApiMeasurement {
         val readingsObject = getJSONObject("readings")

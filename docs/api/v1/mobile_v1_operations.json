@@ -258,6 +258,26 @@
         "alert:acknowledge"
       ],
       "success_status": 201
+    },
+    {
+      "id": "camera.session.create",
+      "method": "POST",
+      "path": "/api/v1/sites/{site_key}/camera-sessions",
+      "auth": "human_bearer",
+      "scopes": [
+        "camera:read"
+      ],
+      "success_status": 201
+    },
+    {
+      "id": "camera.session.close",
+      "method": "DELETE",
+      "path": "/api/v1/sites/{site_key}/camera-sessions/{session_uuid}",
+      "auth": "human_bearer",
+      "scopes": [
+        "camera:read"
+      ],
+      "success_status": 204
     }
   ]
 }

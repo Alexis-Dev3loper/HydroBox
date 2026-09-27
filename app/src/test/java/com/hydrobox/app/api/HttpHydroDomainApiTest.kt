@@ -654,6 +654,33 @@ class HttpHydroDomainApiTest {
     }
 
     @Test
+    fun createsAndClosesAnEphemeralCameraSessionWithoutCachingItsBearer() = runBlocking {
+        val sessionUuid = UUID.fromString("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+        val idempotencyUuid = UUID.fromString("cccccccc-cccc-4ccc-8ccc-cccccccccccc")
+        val responses = ArrayDeque(
+            listOf(
+                StubResponse(201, envelope(cameraSessionJson(sessionUuid.toString()))),
+                StubResponse(204, "")
+            )
+        )
+        val connections = mutableListOf<StubHttpURLConnection>()
+        val api = api(responses, connections, uuid = { idempotencyUuid })
+
+        val session = api.createCameraSession()
+        api.closeCameraSession(session.sessionUuid)
+
+        assertEquals(sessionUuid.toString(), session.sessionUuid)
+        assertEquals("https://media.example.test/whep/sites/university-lab/$sessionUuid", session.playbackUrl)
+        assertEquals(listOf("POST", "DELETE"), connections.map { it.requestMethod })
+        assertEquals(idempotencyUuid.toString(), connections.first().headers["Idempotency-Key"])
+        assertEquals(
+            "https://api.example.test/api/v1/sites/university-lab/camera-sessions/$sessionUuid",
+            connections.last().url.toString()
+        )
+        assertFalse(connections.last().headers.values.any { it.contains(session.accessToken) })
+    }
+
+    @Test
     fun cancellationDuringReadBackoffStopsBeforeCacheFallback() = runBlocking {
         val cache = FakeResponseCache()
         cache.write(
@@ -764,6 +791,9 @@ class HttpHydroDomainApiTest {
         resolvedAt: String?
     ): String =
         """{"alert_uuid":"$uuid","alert_key":"edge_offline","severity":"critical","subject_type":"device","subject_key":"edge_main","status_key":"$status","summary":"Edge sin health reciente","detail":"La evidencia superó el umbral.","occurrence_count":2,"occurred_at":"2026-09-15T12:00:00Z","first_occurred_at":"2026-09-15T11:55:00Z","last_occurred_at":"2026-09-15T12:00:00Z","acknowledged_at":${acknowledgedAt?.let { "\"$it\"" } ?: "null"},"resolved_at":${resolvedAt?.let { "\"$it\"" } ?: "null"},"correlation_uuid":null}"""
+
+    private fun cameraSessionJson(uuid: String): String =
+        """{"session_uuid":"$uuid","site_key":"university-lab","transport":"webrtc-whep","status":"requested","playback_url":"https://media.example.test/whep/sites/university-lab/$uuid","access_token":"synthetic-ephemeral-camera-bearer-token","expires_at":"2026-09-15T12:05:00Z"}"""
 
     private data class StubResponse(
         val status: Int,
