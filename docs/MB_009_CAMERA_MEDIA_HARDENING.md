@@ -1,7 +1,8 @@
 # CAM-03 — receptor Mobile, primer corte MB-009
 
-2026-10-10. Implementación local y pruebas JavaScript verificadas. **JVM,
-lint y APK pendientes de CI autorizada**: este host no tiene JDK/SDK. No es
+2026-10-10. **Publicado `7edf927`, CI `38107521544` SUCCESS: Node + JVM,
+lint y APK verificados**. Este host no tiene JDK/SDK; la evidencia Android
+procede de CI, no de compilación local. No es
 aceptación de WebView físico, relay, cámara, TLS/NAT/TURN ni piloto listo.
 
 ## Frontera y lifecycle
@@ -39,16 +40,20 @@ No captura/grabación, hardware, migration persistente ni credenciales reales.
   tardío, desconexión, status/MIME/SDP/tamaño y ambos timeouts.
 - Se añaden **6 tests JVM** (82 `@Test` en source): origen IPv6/puerto/default,
   rechazo de URL/token, integración real del parser API y render/escape HTML.
-  **Todavía no ejecutados**. Contar tests en source no equivale a pasarlos.
+  Ejecutados mediante testDebugUnitTest en CI verde `38107521544`; no se
+  confundió el conteo previo en source con una ejecución local.
 - El verificador PowerShell ejecuta primero Node y después la matriz Gradle.
   Esta ejecución pasa Node y termina en el guard JDK requerido, no en PASS
-  completo. CI añade Node 22 y mantiene testDebugUnitTest/lintDebug/assembleDebug.
+  completo. CI añade Node 22 y mantiene testDebugUnitTest/lintDebug/assembleDebug;
+  el run autorizado `38107521544` verificó la matriz completa sin errores.
 - OpenAPI/manifest compartidos no cambian. No se adelantará el pin transversal
   hasta push autorizado y CI propietaria verde de este corte.
 
 ## Próximo paso
 
-Publicar con autorización y verificar Node + JVM/lint/APK; corregir cualquier
-fallo antes de promover evidencia. Web `4f24b43` ya se publicó, backend CI verde,
-frontend bloqueado por auditoría de dependencias (deuda SEC-WEB-01 documentada
-en Desktop). #27/Web #10/Mobile #10 continúan abiertos.
+El push autorizado y CI de `7edf927` están cumplidos. No avanzar pins
+transversales mientras Web siga bloqueado: `20f6f97` publicado, CI `38107523680`
+backend verde / frontend audit failure. SEC-WEB-01 propone una migración Web
+independiente aún no aceptada. #27/Web #10/Mobile #10 continúan abiertos;
+no dispositivo, media física ni deployment. Los avisos de runners/Actions
+no bloqueantes permanecen como CI-01, no se cambian por este corte de cámara.
