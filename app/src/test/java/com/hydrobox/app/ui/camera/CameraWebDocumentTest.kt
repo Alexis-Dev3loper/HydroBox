@@ -39,4 +39,23 @@ class CameraWebDocumentTest {
             CameraWebDocument.relayOrigin("http://media.example.test/whep/session")
         }
     }
+
+    @Test
+    fun confinesCleanupAndBoundsMediaInsteadOfTrustingLocation() {
+        val document = CameraWebDocument.render(session)
+        assertTrue(document.contains("url.origin !== expectedOrigin"))
+        assertTrue(document.contains("credentials:'omit', redirect:'error', referrerPolicy:'no-referrer'"))
+        assertTrue(document.contains("bytes > 65536"))
+        assertTrue(document.contains("response.status !== 201"))
+        assertTrue(document.contains("current !== generation"))
+        assertTrue(document.contains("video.onplaying"))
+        assertTrue(document.contains("const expiresAt = ${session.expiresAt.toEpochMilli()}"))
+    }
+
+    @Test
+    fun inlineJsonCannotTerminateTheScriptElement() {
+        val document = CameraWebDocument.render(session.copy(accessToken = "synthetic-token-</script><script>injection</script>"))
+        assertFalse(document.contains("synthetic-token-</script>"))
+        assertTrue(document.contains("synthetic-token-\\u003c"))
+    }
 }

@@ -699,7 +699,10 @@ class HttpHydroDomainApi(
         }
         val playbackUrl = requireString("playback_url")
         val accessToken = requireString("access_token")
-        if (!playbackUrl.startsWith("https://", ignoreCase = true) || accessToken.length < 32) {
+        try {
+            CameraMediaPolicy.origin(playbackUrl)
+            CameraMediaPolicy.validateToken(accessToken)
+        } catch (_: IllegalArgumentException) {
             throw invalidResponse()
         }
         return ApiCameraSession(

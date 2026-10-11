@@ -681,6 +681,25 @@ class HttpHydroDomainApiTest {
     }
 
     @Test
+    fun rejectsUnsafeCameraUrlsAndHeaderInjectedMediaTokensAsInvalidResponses() = runBlocking {
+        val original = cameraSessionJson("bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb")
+        val validUrl = "https://media.example.test/whep/sites/university-lab/bbbbbbbb-bbbb-4bbb-8bbb-bbbbbbbbbbbb"
+        val invalidBodies = listOf(
+            original.replace(validUrl, "https://user:pass@media.example.test/whep"),
+            original.replace(validUrl, "https://media.example.test/whep?token=x"),
+            original.replace(validUrl, "https://media.example.test:0/whep"),
+            original.replace("synthetic-ephemeral-camera-bearer-token", "synthetic-ephemeral-camera-bearer-token\\r\\nInjected: value")
+        )
+        invalidBodies.forEach { body ->
+            val responses = ArrayDeque(listOf(StubResponse(201, envelope(body))))
+            val connections = mutableListOf<StubHttpURLConnection>()
+            val error = expectDomainError { api(responses, connections).createCameraSession() }
+            assertEquals("api.invalid_response", error.problem.code)
+            assertEquals(1, connections.size) // API only; no media transport/cache fallback
+        }
+    }
+
+    @Test
     fun cancellationDuringReadBackoffStopsBeforeCacheFallback() = runBlocking {
         val cache = FakeResponseCache()
         cache.write(
